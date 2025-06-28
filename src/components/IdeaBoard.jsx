@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, addDoc, onSnapshot, query, where, deleteDoc, doc } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, where, deleteDoc, doc, updateDoc, increment, arrayUnion, arrayRemove } from 'firebase/firestore';
 import TrendingRepos from './TrendingRepos';
 
 const IdeaBoard = ({ user }) => {
@@ -12,12 +12,22 @@ const IdeaBoard = ({ user }) => {
   // Read ideas from Firestore
   useEffect(() => {
     if (user) {
-      const q = query(collection(db, 'ideas'), where('userId', '==', user.uid));
+      const q = query(collection(db, 'ideas'));
       const unsubscribe = onSnapshot(q, (querySnapshot) => {
         const ideasData = [];
         querySnapshot.forEach((doc) => {
           ideasData.push({ ...doc.data(), id: doc.id });
         });
+        // Temporarily remove sorting while index builds
+        // ideasData.sort((a, b) => {
+        //   const votesA = a.votes || 0;
+        //   const votesB = b.votes || 0;
+        //   if (votesA !== votesB) {
+        //     return votesB - votesA; // Sort by votes descending
+        //   }
+        //   // If votes are equal, sort by creation date (newest first)
+        //   return new Date(b.createdAt?.toDate?.() || b.createdAt) - new Date(a.createdAt?.toDate?.() || a.createdAt);
+        // });
         setIdeas(ideasData);
       });
       return () => unsubscribe();
@@ -33,6 +43,8 @@ const IdeaBoard = ({ user }) => {
       text: newIdea,
       userId: user.uid,
       createdAt: new Date(),
+      votes: 0,
+      votedBy: []
     };
 
     // Add repository information if a repo was selected
@@ -53,6 +65,26 @@ const IdeaBoard = ({ user }) => {
   // Delete an idea
   const handleDelete = async (id) => {
     await deleteDoc(doc(db, 'ideas', id));
+  };
+
+  // Handle voting on an idea
+  const handleVote = async (ideaId, currentVotes, votedBy) => {
+    const ideaRef = doc(db, 'ideas', ideaId);
+    const hasVoted = votedBy?.includes(user.uid);
+
+    if (hasVoted) {
+      // Remove vote
+      await updateDoc(ideaRef, {
+        votes: increment(-1),
+        votedBy: arrayRemove(user.uid)
+      });
+    } else {
+      // Add vote
+      await updateDoc(ideaRef, {
+        votes: increment(1),
+        votedBy: arrayUnion(user.uid)
+      });
+    }
   };
 
   // Handle repository selection
@@ -133,45 +165,75 @@ const IdeaBoard = ({ user }) => {
 
       {/* Ideas List */}
       <div>
-        {ideas.map((idea) => (
-          <div key={idea.id} className="bg-slate-800 p-4 rounded-lg mb-3 shadow">
-            <div className="flex justify-between items-start">
-              <div className="flex-1">
-                <p className="mb-2">{idea.text}</p>
-                {idea.inspiredBy && (
-                  <div className="bg-slate-700 rounded p-2 text-sm">
-                    <p className="text-blue-400 mb-1">
-                      💡 Inspired by: <a 
-                        href={idea.inspiredBy.repoUrl} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-blue-300 hover:text-blue-200 underline"
-                      >
-                        {idea.inspiredBy.repoName}
-                      </a>
-                    </p>
-                    {idea.inspiredBy.repoDescription && (
-                      <p className="text-gray-400 text-xs">
-                        {idea.inspiredBy.repoDescription}
-                      </p>
-                    )}
-                    {idea.inspiredBy.language && (
-                      <span className="inline-block bg-blue-600 text-blue-200 text-xs px-2 py-1 rounded mt-1">
-                        {idea.inspiredBy.language}
+        {ideas.map((idea, index) => {
+          const hasVoted = idea.votedBy?.includes(user.uid);
+          const voteCount = idea.votes || 0;
+          
+          return (
+            <div key={idea.id} className="bg-slate-800 p-4 rounded-lg mb-3 shadow">
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="text-sm text-gray-400 font-mono">
+                      #{index + 1}
+                    </span>
+                    <p className="flex-1">{idea.text}</p>
+                  </div>
+                  
+                  {/* Vote Button and Count */}
+                  <div className="flex items-center gap-2 mb-3">
+                    <button
+                      onClick={() => handleVote(idea.id, voteCount, idea.votedBy)}
+                      className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                        hasVoted
+                          ? 'bg-yellow-500 text-yellow-900 hover:bg-yellow-400'
+                          : 'bg-slate-600 text-gray-300 hover:bg-slate-500'
+                      }`}
+                    >
+                      {hasVoted ? '⭐' : '☆'} {voteCount}
+                    </button>
+                    {voteCount > 0 && (
+                      <span className="text-xs text-gray-400">
+                        {voteCount === 1 ? '1 vote' : `${voteCount} votes`}
                       </span>
                     )}
                   </div>
-                )}
+
+                  {idea.inspiredBy && (
+                    <div className="bg-slate-700 rounded p-2 text-sm">
+                      <p className="text-blue-400 mb-1">
+                        💡 Inspired by: <a 
+                          href={idea.inspiredBy.repoUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-blue-300 hover:text-blue-200 underline"
+                        >
+                          {idea.inspiredBy.repoName}
+                        </a>
+                      </p>
+                      {idea.inspiredBy.repoDescription && (
+                        <p className="text-gray-400 text-xs">
+                          {idea.inspiredBy.repoDescription}
+                        </p>
+                      )}
+                      {idea.inspiredBy.language && (
+                        <span className="inline-block bg-blue-600 text-blue-200 text-xs px-2 py-1 rounded mt-1">
+                          {idea.inspiredBy.language}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <button 
+                  onClick={() => handleDelete(idea.id)} 
+                  className="text-red-500 hover:text-red-400 font-bold ml-4"
+                >
+                  X
+                </button>
               </div>
-              <button 
-                onClick={() => handleDelete(idea.id)} 
-                className="text-red-500 hover:text-red-400 font-bold ml-4"
-              >
-                X
-              </button>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
