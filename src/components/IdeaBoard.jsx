@@ -1,23 +1,67 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, addDoc, onSnapshot, query, where, deleteDoc, doc, updateDoc, increment, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, where, doc, updateDoc, increment, arrayUnion, arrayRemove, getDoc, getDocs } from 'firebase/firestore';
 import TrendingRepos from './TrendingRepos';
+import AccountSettings from './AccountSettings';
 
 const IdeaBoard = ({ user }) => {
   const [ideas, setIdeas] = useState([]);
   const [newIdea, setNewIdea] = useState('');
   const [showTrendingRepos, setShowTrendingRepos] = useState(false);
   const [selectedRepo, setSelectedRepo] = useState(null);
+  const [displayName, setDisplayName] = useState('');
+  const [userProfile, setUserProfile] = useState(null);
+  const [showAccountSettings, setShowAccountSettings] = useState(false);
+  const [sortBy, setSortBy] = useState('new'); // 'new', 'top', 'hot'
+  const [sortedIdeas, setSortedIdeas] = useState([]);
+
+  // Fetch user profile for registered users
+  const fetchUserProfile = async () => {
+    if (user && user.email) {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          setUserProfile(userDoc.data());
+        }
+      } catch (error) {
+        console.error('Error fetching user profile:', error);
+      }
+    }
+  };
+
+  useEffect(() => {
+    fetchUserProfile();
+  }, [user]);
 
   // Read ideas from Firestore
   useEffect(() => {
     if (user) {
       const q = query(collection(db, 'ideas'));
-      const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const unsubscribe = onSnapshot(q, async (querySnapshot) => {
         const ideasData = [];
-        querySnapshot.forEach((doc) => {
-          ideasData.push({ ...doc.data(), id: doc.id });
-        });
+        
+        // Process each idea and fetch usernames if needed
+        for (const doc of querySnapshot.docs) {
+          const ideaData = { ...doc.data(), id: doc.id };
+          
+          // If idea has userEmail but no userDisplayName, try to fetch username
+          if (ideaData.userEmail && !ideaData.userDisplayName) {
+            try {
+              // Try to find user by email in users collection
+              const usersQuery = query(collection(db, 'users'), where('email', '==', ideaData.userEmail));
+              const userSnapshot = await getDocs(usersQuery);
+              if (!userSnapshot.empty) {
+                const userDoc = userSnapshot.docs[0];
+                ideaData.userDisplayName = userDoc.data().username;
+              }
+            } catch (error) {
+              console.error('Error fetching username for idea:', error);
+            }
+          }
+          
+          ideasData.push(ideaData);
+        }
+        
         // Temporarily remove sorting while index builds
         // ideasData.sort((a, b) => {
         //   const votesA = a.votes || 0;
@@ -42,6 +86,8 @@ const IdeaBoard = ({ user }) => {
     const ideaData = {
       text: newIdea,
       userId: user.uid,
+      userEmail: user.email || null,
+      userDisplayName: user.email ? (userProfile?.username || user.email) : (displayName || 'Anonymous'),
       createdAt: new Date(),
       votes: 0,
       votedBy: []
@@ -60,11 +106,6 @@ const IdeaBoard = ({ user }) => {
     await addDoc(collection(db, 'ideas'), ideaData);
     setNewIdea('');
     setSelectedRepo(null);
-  };
-
-  // Delete an idea
-  const handleDelete = async (id) => {
-    await deleteDoc(doc(db, 'ideas', id));
   };
 
   // Handle voting on an idea
@@ -103,16 +144,95 @@ const IdeaBoard = ({ user }) => {
     setSelectedRepo(null);
   };
 
+  // Handle account settings close and refresh profile
+  const handleAccountSettingsClose = () => {
+    setShowAccountSettings(false);
+    fetchUserProfile(); // Refresh profile after settings update
+  };
+
+  // Sort ideas based on selected criteria
+  const sortIdeas = (ideasToSort, sortCriteria) => {
+    const now = new Date();
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    return [...ideasToSort].sort((a, b) => {
+      const votesA = a.votes || 0;
+      const votesB = b.votes || 0;
+      const dateA = a.createdAt?.toDate?.() || new Date(a.createdAt);
+      const dateB = b.createdAt?.toDate?.() || new Date(b.createdAt);
+      const timeDiffA = now - dateA;
+      const timeDiffB = now - dateB;
+
+      switch (sortCriteria) {
+        case 'new':
+          // Sort by creation date (newest first)
+          return dateB - dateA;
+        
+        case 'top':
+          // Sort by total votes (highest first)
+          if (votesA !== votesB) {
+            return votesB - votesA;
+          }
+          // If votes are equal, sort by creation date (newest first)
+          return dateB - dateA;
+        
+        case 'hot':
+          // Hot algorithm: votes / time^1.5 (Reddit-style)
+          const hotScoreA = votesA / Math.pow((timeDiffA / 1000 / 3600) + 2, 1.5);
+          const hotScoreB = votesB / Math.pow((timeDiffB / 1000 / 3600) + 2, 1.5);
+          return hotScoreB - hotScoreA;
+        
+        default:
+          return dateB - dateA;
+      }
+    });
+  };
+
+  // Update sorted ideas when ideas or sort criteria change
+  useEffect(() => {
+    setSortedIdeas(sortIdeas(ideas, sortBy));
+  }, [ideas, sortBy]);
+
   return (
     <div className="max-w-4xl mx-auto">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-3xl font-bold">Welcome, {user.email}</h2>
-        <button
-          onClick={() => setShowTrendingRepos(!showTrendingRepos)}
-          className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded"
-        >
-          {showTrendingRepos ? 'Hide' : 'Show'} Trending Repos
-        </button>
+        <div>
+          <h2 className="text-3xl font-bold">
+            Welcome, {user.email ? (userProfile?.username || user.email) : 'Guest User'}
+          </h2>
+          {!user.email && (
+            <p className="text-sm text-gray-400 mt-1">
+              You're browsing as a guest. Create an account to save your ideas permanently.
+            </p>
+          )}
+          {user.email && !userProfile?.username && (
+            <p className="text-sm text-yellow-400 mt-1">
+              ⚠️ No username set. <button 
+                onClick={() => setShowAccountSettings(true)}
+                className="text-blue-400 hover:text-blue-300 underline"
+              >
+                Create one here
+              </button> to display your name instead of email.
+            </p>
+          )}
+        </div>
+        <div className="flex gap-2">
+          {user.email && (
+            <button
+              onClick={() => setShowAccountSettings(true)}
+              className="bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-4 rounded transition-colors"
+            >
+              ⚙️ Settings
+            </button>
+          )}
+          <button
+            onClick={() => setShowTrendingRepos(!showTrendingRepos)}
+            className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded"
+          >
+            {showTrendingRepos ? 'Hide' : 'Show'} Trending Repos
+          </button>
+        </div>
       </div>
 
       {/* Trending Repositories Section */}
@@ -150,22 +270,82 @@ const IdeaBoard = ({ user }) => {
       )}
 
       {/* Idea Creation Form */}
-      <form onSubmit={handleSubmit} className="mb-6 flex">
-        <input
-          type="text"
-          value={newIdea}
-          onChange={(e) => setNewIdea(e.target.value)}
-          placeholder={selectedRepo ? "Modify your inspired idea..." : "What's your next big idea?"}
-          className="flex-grow p-2 bg-slate-700 rounded-l border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <button type="submit" className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-r">
-          Add Idea
-        </button>
-      </form>
+      <div className="mb-6">
+        {!user.email && (
+          <div className="mb-4">
+            <input
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="Your name (optional)"
+              className="w-full p-2 bg-slate-700 rounded border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
+            />
+            <p className="text-xs text-gray-400">
+              Add your name to identify your ideas (optional)
+            </p>
+          </div>
+        )}
+        <form onSubmit={handleSubmit} className="flex">
+          <input
+            type="text"
+            value={newIdea}
+            onChange={(e) => setNewIdea(e.target.value)}
+            placeholder={selectedRepo ? "Modify your inspired idea..." : "What's your next big idea?"}
+            className="flex-grow p-2 bg-slate-700 rounded-l border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <button type="submit" className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-r">
+            Add Idea
+          </button>
+        </form>
+      </div>
+
+      {/* Sorting Controls */}
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-sm text-gray-400">Sort by:</span>
+          <div className="flex bg-slate-700 rounded-lg p-1">
+            <button
+              onClick={() => setSortBy('hot')}
+              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                sortBy === 'hot'
+                  ? 'bg-blue-500 text-white'
+                  : 'text-gray-300 hover:text-white hover:bg-slate-600'
+              }`}
+            >
+              🔥 Hot
+            </button>
+            <button
+              onClick={() => setSortBy('top')}
+              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                sortBy === 'top'
+                  ? 'bg-blue-500 text-white'
+                  : 'text-gray-300 hover:text-white hover:bg-slate-600'
+              }`}
+            >
+              ⭐ Top
+            </button>
+            <button
+              onClick={() => setSortBy('new')}
+              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                sortBy === 'new'
+                  ? 'bg-blue-500 text-white'
+                  : 'text-gray-300 hover:text-white hover:bg-slate-600'
+              }`}
+            >
+              🆕 New
+            </button>
+          </div>
+        </div>
+        <div className="text-xs text-gray-500">
+          {sortBy === 'hot' && '🔥 Hot: Trending ideas based on votes and recency'}
+          {sortBy === 'top' && '⭐ Top: Most voted ideas of all time'}
+          {sortBy === 'new' && '🆕 New: Latest ideas posted'}
+        </div>
+      </div>
 
       {/* Ideas List */}
       <div>
-        {ideas.map((idea, index) => {
+        {sortedIdeas.map((idea, index) => {
           const hasVoted = idea.votedBy?.includes(user.uid);
           const voteCount = idea.votes || 0;
           
@@ -178,6 +358,20 @@ const IdeaBoard = ({ user }) => {
                       #{index + 1}
                     </span>
                     <p className="flex-1">{idea.text}</p>
+                  </div>
+                  
+                  {/* User Info */}
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs text-gray-500">
+                      by {idea.userDisplayName || idea.userEmail || 'Anonymous'}
+                    </span>
+                    <span className="text-xs text-gray-600">•</span>
+                    <span className="text-xs text-gray-500">
+                      {idea.createdAt?.toDate?.() ? 
+                        idea.createdAt.toDate().toLocaleDateString() : 
+                        new Date(idea.createdAt).toLocaleDateString()
+                      }
+                    </span>
                   </div>
                   
                   {/* Vote Button and Count */}
@@ -224,17 +418,19 @@ const IdeaBoard = ({ user }) => {
                     </div>
                   )}
                 </div>
-                <button 
-                  onClick={() => handleDelete(idea.id)} 
-                  className="text-red-500 hover:text-red-400 font-bold ml-4"
-                >
-                  X
-                </button>
               </div>
             </div>
           );
         })}
       </div>
+
+      {/* Account Settings Modal */}
+      {showAccountSettings && (
+        <AccountSettings 
+          user={user} 
+          onClose={handleAccountSettingsClose}
+        />
+      )}
     </div>
   );
 };
