@@ -1,5 +1,7 @@
 import { renderMarkdown, hasMarkdown } from '../utils/markdown';
 import useSwipe from '../hooks/useSwipe';
+import Icon from './Icon';
+import { LoadingSpinner } from './Progress';
 
 const SwipeableIdeaCard = ({ 
   idea, 
@@ -93,15 +95,19 @@ const SwipeableIdeaCard = ({
           <button
             onClick={(e) => { e.preventDefault(); handleVote(idea.id, voteCount, idea.votedBy, 'upvote'); }}
             disabled={votingStates[idea.id]}
-            className={`flex items-center gap-1 px-4 py-3 sm:py-2 rounded-full text-sm font-medium transition-all duration-200 touch-manipulation min-h-[44px] min-w-[60px] justify-center ${
+            className={`flex items-center gap-1 px-4 py-3 sm:py-2 rounded-full text-sm font-medium transition-all duration-200 touch-manipulation min-h-[44px] min-w-[60px] justify-center shadow-md ${
               votingStates[idea.id]
                 ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
                 : hasUpvoted
-                  ? 'bg-green-500 text-green-900 hover:bg-green-400 active:scale-95 active:bg-green-600'
-                  : 'bg-slate-600 text-gray-300 hover:bg-slate-500 active:scale-95 active:bg-slate-400'
+                  ? 'bg-green-500 text-white hover:bg-green-400 active:scale-95 active:bg-green-600 hover:shadow-lg'
+                  : 'bg-slate-600 text-gray-300 hover:bg-slate-500 active:scale-95 active:bg-slate-400 hover:shadow-lg'
             }`}
           >
-            {votingStates[idea.id] ? '🔄' : (hasUpvoted ? '👍' : '👍')} 
+            {votingStates[idea.id] ? (
+              <LoadingSpinner size="sm" variant="light" />
+            ) : (
+              <Icon name="thumb-up" size="sm" />
+            )}
           </button>
           <span className={`text-sm font-medium transition-colors ${
             voteCount > 0 ? 'text-green-400' : voteCount < 0 ? 'text-red-400' : 'text-gray-400'
@@ -111,15 +117,19 @@ const SwipeableIdeaCard = ({
           <button
             onClick={(e) => { e.preventDefault(); handleVote(idea.id, voteCount, idea.votedBy, 'downvote'); }}
             disabled={votingStates[idea.id]}
-            className={`flex items-center gap-1 px-4 py-3 sm:py-2 rounded-full text-sm font-medium transition-all duration-200 touch-manipulation min-h-[44px] min-w-[60px] justify-center ${
+            className={`flex items-center gap-1 px-4 py-3 sm:py-2 rounded-full text-sm font-medium transition-all duration-200 touch-manipulation min-h-[44px] min-w-[60px] justify-center shadow-md ${
               votingStates[idea.id]
                 ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
                 : hasDownvoted
-                  ? 'bg-red-500 text-red-900 hover:bg-red-400 active:scale-95 active:bg-red-600'
-                  : 'bg-slate-600 text-gray-300 hover:bg-slate-500 active:scale-95 active:bg-slate-400'
+                  ? 'bg-red-500 text-white hover:bg-red-400 active:scale-95 active:bg-red-600 hover:shadow-lg'
+                  : 'bg-slate-600 text-gray-300 hover:bg-slate-500 active:scale-95 active:bg-slate-400 hover:shadow-lg'
             }`}
           >
-            {votingStates[idea.id] ? '🔄' : (hasDownvoted ? '👎' : '👎')}
+            {votingStates[idea.id] ? (
+              <LoadingSpinner size="sm" variant="light" />
+            ) : (
+              <Icon name="thumb-down" size="sm" />
+            )}
           </button>
           {Math.abs(voteCount) > 0 && (
             <span className="text-xs text-gray-400">

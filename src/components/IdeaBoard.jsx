@@ -7,6 +7,8 @@ import { renderMarkdown, hasMarkdown } from '../utils/markdown';
 import SwipeableIdeaCard from './SwipeableIdeaCard';
 import BottomSheet from './BottomSheet';
 import OnboardingTour from './OnboardingTour';
+import Icon from './Icon';
+import { LoadingSpinner, LinearProgress } from './Progress';
 
 const IdeaBoard = ({ user }) => {
   const [ideas, setIdeas] = useState([]);
@@ -653,47 +655,60 @@ const IdeaBoard = ({ user }) => {
       </div>
 
       {/* Header Section */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 space-y-4 sm:space-y-0">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 space-y-6 sm:space-y-0">
         <div className="flex-1">
-          <h2 className="text-2xl sm:text-3xl font-bold break-words">
-            Welcome, {user.email ? (userProfile?.username || user.email) : 'Guest User'}
-          </h2>
+          <div className="flex items-center gap-3 mb-2">
+            <Icon name="light-bulb" size="xl" className="text-blue-500" />
+            <h2 className="text-3xl sm:text-4xl font-bold text-slate-100 dark:text-slate-100 light:text-slate-900">
+              Welcome back!
+            </h2>
+          </div>
+          <p className="text-lg text-slate-300 dark:text-slate-300 light:text-slate-600 mb-1">
+            {user.email ? (userProfile?.username || user.email) : 'Guest User'}
+          </p>
           {!user.email && (
-            <p className="text-sm text-gray-400 mt-1">
-              You're browsing as a guest. Create an account to save your ideas permanently.
-            </p>
+            <div className="flex items-center gap-2 text-sm text-amber-400">
+              <Icon name="information-circle" size="sm" />
+              <span>You're browsing as a guest. Create an account to save your ideas permanently.</span>
+            </div>
           )}
           {user.email && !userProfile?.username && (
-            <p className="text-sm text-yellow-400 mt-1">
-              ⚠️ No username set. <button 
-                onClick={() => setShowAccountSettings(true)}
-                className="text-blue-400 hover:text-blue-300 underline"
-              >
-                Create one here
-              </button> to display your name instead of email.
-            </p>
+            <div className="flex items-center gap-2 text-sm text-yellow-400">
+              <Icon name="exclamation-triangle" size="sm" />
+              <span>
+                No username set. <button 
+                  onClick={() => setShowAccountSettings(true)}
+                  className="text-blue-400 hover:text-blue-300 underline font-medium"
+                >
+                  Create one here
+                </button> to display your name instead of email.
+              </span>
+            </div>
           )}
         </div>
-        <div className="flex flex-col sm:flex-row gap-2">
+        <div className="flex flex-col sm:flex-row gap-3">
           <button
             onClick={startOnboarding}
-            className="bg-green-500 hover:bg-green-600 active:bg-green-700 text-white font-bold py-3 px-4 rounded transition-colors text-sm sm:text-base min-h-[44px] touch-manipulation"
+            className="bg-green-500 hover:bg-green-600 active:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-200 text-sm sm:text-base min-h-[44px] touch-manipulation flex items-center gap-2 shadow-md hover:shadow-lg"
           >
-            🎯 Take Tour
+            <Icon name="information-circle" size="sm" />
+            Take Tour
           </button>
           {user.email && (
             <button
               onClick={() => setShowAccountSettings(true)}
-              className="bg-slate-600 hover:bg-slate-500 active:bg-slate-700 text-white font-bold py-3 px-4 rounded transition-colors text-sm sm:text-base min-h-[44px] touch-manipulation"
+              className="bg-slate-600 hover:bg-slate-500 active:bg-slate-700 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-200 text-sm sm:text-base min-h-[44px] touch-manipulation flex items-center gap-2 shadow-md hover:shadow-lg"
             >
-              ⚙️ Settings
+              <Icon name="cog" size="sm" />
+              Settings
             </button>
           )}
           <button
             onClick={() => setShowTrendingRepos(!showTrendingRepos)}
-            className="bg-purple-500 hover:bg-purple-600 active:bg-purple-700 text-white font-bold py-3 px-4 rounded text-sm sm:text-base min-h-[44px] touch-manipulation"
+            className="bg-purple-500 hover:bg-purple-600 active:bg-purple-700 text-white font-semibold py-3 px-4 rounded-lg text-sm sm:text-base min-h-[44px] touch-manipulation flex items-center gap-2 shadow-md hover:shadow-lg transition-all duration-200"
           >
-            {isMobile ? '🔥 Trending' : (showTrendingRepos ? 'Hide' : 'Show') + ' Trending Repos'}
+            <Icon name="fire" size="sm" />
+            {isMobile ? 'Trending' : (showTrendingRepos ? 'Hide' : 'Show') + ' Trending Repos'}
           </button>
         </div>
       </div>
@@ -906,20 +921,31 @@ const IdeaBoard = ({ user }) => {
             <button 
               type="submit" 
               disabled={isSubmitting || newIdea.trim() === '' || newIdea.length > 500}
-              className={`flex-1 sm:flex-none font-bold py-4 px-6 rounded text-sm sm:text-base transition-all duration-200 min-h-[48px] touch-manipulation ${
+              className={`flex-1 sm:flex-none font-semibold py-4 px-6 rounded-lg text-sm sm:text-base transition-all duration-200 min-h-[48px] touch-manipulation flex items-center justify-center gap-2 shadow-md ${
                 isSubmitting || newIdea.trim() === '' || newIdea.length > 500
                   ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                  : 'bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white hover:scale-105 active:scale-95'
+                  : 'bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white hover:scale-105 active:scale-95 hover:shadow-lg'
               }`}
             >
-              {isSubmitting ? '🔄 Adding...' : '💡 Add Idea'}
+              {isSubmitting ? (
+                <>
+                  <LoadingSpinner size="sm" variant="light" />
+                  Adding...
+                </>
+              ) : (
+                <>
+                  <Icon name="light-bulb" size="sm" />
+                  Add Idea
+                </>
+              )}
             </button>
             {(newIdea.trim() || newTags.trim()) && (
               <button
                 type="button"
                 onClick={() => {setNewIdea(''); setNewTags(''); setSelectedRepo(null);}}
-                className="px-4 py-4 bg-slate-600 hover:bg-slate-500 active:bg-slate-700 text-white rounded text-sm transition-colors min-h-[48px] touch-manipulation"
+                className="px-4 py-4 bg-slate-600 hover:bg-slate-500 active:bg-slate-700 text-white rounded-lg text-sm transition-colors min-h-[48px] touch-manipulation flex items-center gap-2 shadow-md hover:shadow-lg"
               >
+                <Icon name="x-mark" size="sm" />
                 Clear
               </button>
             )}
@@ -1032,9 +1058,9 @@ const IdeaBoard = ({ user }) => {
 
       {/* Loading More Indicator */}
       {isLoadingMore && (
-        <div className="text-center py-4">
-          <div className="text-2xl">🔄</div>
-          <p className="text-gray-500 text-sm mt-2">Loading more ideas...</p>
+        <div className="text-center py-6">
+          <LoadingSpinner size="lg" variant="primary" className="mx-auto mb-3" />
+          <p className="text-slate-400 text-sm font-medium">Loading more ideas...</p>
         </div>
       )}
 
