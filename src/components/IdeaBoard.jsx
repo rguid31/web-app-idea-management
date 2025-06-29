@@ -6,6 +6,7 @@ import AccountSettings from './AccountSettings';
 import { renderMarkdown, hasMarkdown } from '../utils/markdown';
 import SwipeableIdeaCard from './SwipeableIdeaCard';
 import BottomSheet from './BottomSheet';
+import OnboardingTour from './OnboardingTour';
 
 const IdeaBoard = ({ user }) => {
   const [ideas, setIdeas] = useState([]);
@@ -28,6 +29,120 @@ const IdeaBoard = ({ user }) => {
   const [isLoadingMore, setIsLoadingMore] = useState(false); // Loading state for infinite scroll
   const [isMobile, setIsMobile] = useState(false); // Track mobile screen size
   const [isScrolled, setIsScrolled] = useState(false); // Track scroll position for sticky header
+  const [isDraftRestored, setIsDraftRestored] = useState(false); // Track if draft was restored
+  const [similarIdeas, setSimilarIdeas] = useState([]); // Track similar ideas found
+  const [showDuplicateWarning, setShowDuplicateWarning] = useState(false); // Show duplicate warning
+  const [showOnboarding, setShowOnboarding] = useState(false); // Show onboarding tour
+  const [onboardingStep, setOnboardingStep] = useState(0); // Current onboarding step
+
+  // Onboarding management
+  const getOnboardingKey = () => `onboarding-completed-${user?.uid || 'anonymous'}`;
+  
+  const isFirstTimeUser = () => {
+    try {
+      return !localStorage.getItem(getOnboardingKey());
+    } catch (error) {
+      return true; // Default to showing onboarding if localStorage fails
+    }
+  };
+
+  const markOnboardingComplete = () => {
+    try {
+      localStorage.setItem(getOnboardingKey(), 'true');
+    } catch (error) {
+      console.error('Failed to save onboarding completion:', error);
+    }
+  };
+
+  const startOnboarding = () => {
+    setOnboardingStep(0);
+    setShowOnboarding(true);
+  };
+
+  const handleOnboardingClose = () => {
+    setShowOnboarding(false);
+    markOnboardingComplete();
+  };
+
+  const handleOnboardingNext = () => {
+    setOnboardingStep(prev => prev + 1);
+  };
+
+  const handleOnboardingPrev = () => {
+    setOnboardingStep(prev => Math.max(0, prev - 1));
+  };
+
+  // Duplicate detection utilities
+  const calculateSimilarity = (text1, text2) => {
+    // Simple similarity check using word overlap
+    const words1 = text1.toLowerCase().split(/\s+/).filter(word => word.length > 3);
+    const words2 = text2.toLowerCase().split(/\s+/).filter(word => word.length > 3);
+    
+    if (words1.length === 0 || words2.length === 0) return 0;
+    
+    const intersection = words1.filter(word => words2.includes(word));
+    const union = [...new Set([...words1, ...words2])];
+    
+    return intersection.length / union.length;
+  };
+
+  const findSimilarIdeas = (newIdeaText) => {
+    if (!newIdeaText.trim() || newIdeaText.length < 20) return [];
+    
+    return ideas
+      .filter(idea => {
+        const similarity = calculateSimilarity(newIdeaText, idea.text);
+        return similarity > 0.3; // 30% similarity threshold
+      })
+      .slice(0, 3) // Show max 3 similar ideas
+      .map(idea => ({
+        ...idea,
+        similarity: calculateSimilarity(newIdeaText, idea.text)
+      }))
+      .sort((a, b) => b.similarity - a.similarity);
+  };
+
+  // Draft management utilities
+  const getDraftKey = () => `idea-draft-${user?.uid || 'anonymous'}`;
+  
+  const saveDraft = (idea, tags) => {
+    try {
+      const draft = {
+        idea: idea.trim(),
+        tags: tags.trim(),
+        timestamp: Date.now()
+      };
+      localStorage.setItem(getDraftKey(), JSON.stringify(draft));
+    } catch (error) {
+      console.error('Failed to save draft:', error);
+    }
+  };
+
+  const loadDraft = () => {
+    try {
+      const draftStr = localStorage.getItem(getDraftKey());
+      if (draftStr) {
+        const draft = JSON.parse(draftStr);
+        // Only restore drafts from the last 24 hours
+        if (Date.now() - draft.timestamp < 24 * 60 * 60 * 1000) {
+          return draft;
+        } else {
+          clearDraft();
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load draft:', error);
+    }
+    return null;
+  };
+
+  const clearDraft = () => {
+    try {
+      localStorage.removeItem(getDraftKey());
+    } catch (error) {
+      console.error('Failed to clear draft:', error);
+    }
+  };
 
   // Fetch user profile for registered users
   const fetchUserProfile = async () => {
@@ -45,6 +160,26 @@ const IdeaBoard = ({ user }) => {
 
   useEffect(() => {
     fetchUserProfile();
+    
+    // Load draft when user changes or component mounts
+    if (user && !isDraftRestored) {
+      const draft = loadDraft();
+      if (draft && (draft.idea || draft.tags)) {
+        setNewIdea(draft.idea || '');
+        setNewTags(draft.tags || '');
+        setIsDraftRestored(true);
+        showNotification('📝 Draft restored! Your previous idea was saved.', 'info');
+      }
+    }
+
+    // Check for first-time users and show onboarding
+    if (user && isFirstTimeUser()) {
+      // Delay onboarding slightly to let the UI settle
+      const timeoutId = setTimeout(() => {
+        setShowOnboarding(true);
+      }, 1000);
+      return () => clearTimeout(timeoutId);
+    }
   }, [user]);
 
   // Read ideas from Firestore
@@ -134,6 +269,7 @@ const IdeaBoard = ({ user }) => {
       setNewIdea('');
       setNewTags('');
       setSelectedRepo(null);
+      clearDraft(); // Clear saved draft after successful submission
       showNotification('💡 Idea added successfully!', 'success');
     } catch (error) {
       console.error('Error adding idea:', error);
@@ -355,6 +491,91 @@ const IdeaBoard = ({ user }) => {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // Keyboard shortcuts effect
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Ctrl/Cmd + Enter to submit form
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        if (newIdea.trim() && newIdea.length <= 500 && !isSubmitting) {
+          handleSubmit(e);
+        }
+      }
+      
+      // Escape to clear form
+      if (e.key === 'Escape') {
+        if (newIdea.trim() || newTags.trim() || selectedRepo) {
+          setNewIdea('');
+          setNewTags('');
+          setSelectedRepo(null);
+        } else if (searchTerm) {
+          setSearchTerm('');
+        } else if (selectedCategory) {
+          setSelectedCategory('');
+        }
+      }
+      
+      // Quick sort shortcuts (when not in input fields)
+      if (!e.target.matches('input, textarea')) {
+        switch (e.key) {
+          case '1':
+            setSortBy(null); // Latest
+            break;
+          case '2':
+            setSortBy('hot'); // Hot
+            break;
+          case '3':
+            setSortBy('top'); // Top
+            break;
+          case '4':
+            setSortBy('new'); // New
+            break;
+          case '/':
+            e.preventDefault();
+            document.querySelector('input[placeholder*="Search"]')?.focus();
+            break;
+          case 't':
+            setShowTrendingRepos(!showTrendingRepos);
+            break;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [newIdea, newTags, selectedRepo, searchTerm, selectedCategory, isSubmitting, showTrendingRepos]);
+
+  // Auto-save draft effect
+  useEffect(() => {
+    if (!user || !isDraftRestored) return;
+    
+    const timeoutId = setTimeout(() => {
+      if (newIdea.trim() || newTags.trim()) {
+        saveDraft(newIdea, newTags);
+      } else {
+        clearDraft();
+      }
+    }, 2000); // Save after 2 seconds of inactivity
+
+    return () => clearTimeout(timeoutId);
+  }, [newIdea, newTags, user, isDraftRestored]);
+
+  // Duplicate detection effect
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (newIdea.trim().length > 20) {
+        const similar = findSimilarIdeas(newIdea);
+        setSimilarIdeas(similar);
+        setShowDuplicateWarning(similar.length > 0);
+      } else {
+        setSimilarIdeas([]);
+        setShowDuplicateWarning(false);
+      }
+    }, 1000); // Check after 1 second of inactivity
+
+    return () => clearTimeout(timeoutId);
+  }, [newIdea, ideas]);
+
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
       {/* Sticky Header */}
@@ -454,6 +675,12 @@ const IdeaBoard = ({ user }) => {
           )}
         </div>
         <div className="flex flex-col sm:flex-row gap-2">
+          <button
+            onClick={startOnboarding}
+            className="bg-green-500 hover:bg-green-600 active:bg-green-700 text-white font-bold py-3 px-4 rounded transition-colors text-sm sm:text-base min-h-[44px] touch-manipulation"
+          >
+            🎯 Take Tour
+          </button>
           {user.email && (
             <button
               onClick={() => setShowAccountSettings(true)}
@@ -627,6 +854,41 @@ const IdeaBoard = ({ user }) => {
               {newIdea.length}/500
             </div>
           </div>
+          
+          {/* Duplicate Warning */}
+          {showDuplicateWarning && similarIdeas.length > 0 && (
+            <div className="bg-yellow-900/50 border border-yellow-600 rounded-lg p-3 text-sm">
+              <div className="flex items-start gap-2">
+                <span className="text-yellow-400">⚠️</span>
+                <div className="flex-1">
+                  <p className="text-yellow-200 font-medium mb-2">
+                    Similar ideas found! Consider checking these existing ideas first:
+                  </p>
+                  <div className="space-y-2">
+                    {similarIdeas.map(idea => (
+                      <div key={idea.id} className="bg-yellow-800/30 rounded p-2 text-xs">
+                        <p className="text-yellow-100 line-clamp-2 mb-1">{idea.text}</p>
+                        <div className="flex items-center gap-2 text-yellow-300">
+                          <span>by {idea.userDisplayName || 'Anonymous'}</span>
+                          <span>•</span>
+                          <span>{Math.round(idea.similarity * 100)}% similar</span>
+                          <span>•</span>
+                          <span>{idea.votes || 0} votes</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowDuplicateWarning(false)}
+                    className="mt-2 text-yellow-400 hover:text-yellow-300 text-xs underline"
+                  >
+                    Continue anyway
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           <div className="relative">
             <input
               type="text"
@@ -672,7 +934,7 @@ const IdeaBoard = ({ user }) => {
               }
             </p>
           )}
-          <div className="text-xs text-gray-500 mt-2">
+          <div className="text-xs text-gray-500 mt-2 flex flex-col sm:flex-row gap-2">
             <details className="cursor-pointer">
               <summary className="hover:text-gray-400">📝 Formatting supported</summary>
               <div className="mt-2 space-y-1 bg-slate-700 p-2 rounded text-xs">
@@ -681,6 +943,16 @@ const IdeaBoard = ({ user }) => {
                 <div>`code` → <code className="bg-slate-600 px-1 rounded">code</code></div>
                 <div>[link text](https://example.com) → <a href="#" className="text-blue-400">link text</a></div>
                 <div>URLs are automatically linked</div>
+              </div>
+            </details>
+            <details className="cursor-pointer">
+              <summary className="hover:text-gray-400">⌨️ Keyboard shortcuts</summary>
+              <div className="mt-2 space-y-1 bg-slate-700 p-2 rounded text-xs">
+                <div><kbd className="bg-slate-600 px-1 rounded">Ctrl+Enter</kbd> → Submit idea</div>
+                <div><kbd className="bg-slate-600 px-1 rounded">Esc</kbd> → Clear form/search</div>
+                <div><kbd className="bg-slate-600 px-1 rounded">/</kbd> → Focus search</div>
+                <div><kbd className="bg-slate-600 px-1 rounded">1-4</kbd> → Quick sort</div>
+                <div><kbd className="bg-slate-600 px-1 rounded">t</kbd> → Toggle trending</div>
               </div>
             </details>
           </div>
@@ -790,30 +1062,100 @@ const IdeaBoard = ({ user }) => {
       {sortedIdeas.length === 0 && (
         <div className="text-center py-12">
           {searchTerm ? (
-            <div>
-              <div className="text-4xl mb-4">🔍</div>
-              <h3 className="text-xl font-semibold text-gray-300 mb-2">No ideas found</h3>
-              <p className="text-gray-500 mb-4">Try adjusting your search terms or browse all ideas</p>
-              <button 
-                onClick={() => setSearchTerm('')}
-                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
-              >
-                Clear Search
-              </button>
+            <div className="max-w-md mx-auto">
+              <div className="text-6xl mb-6">🔍</div>
+              <h3 className="text-2xl font-semibold text-gray-300 mb-3">No ideas found</h3>
+              <p className="text-gray-500 mb-6">
+                No ideas match "<span className="text-white font-medium">{searchTerm}</span>". 
+                Try different keywords or create this idea yourself!
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <button 
+                  onClick={() => setSearchTerm('')}
+                  className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg transition-colors"
+                >
+                  Clear Search
+                </button>
+                <button 
+                  onClick={() => {
+                    setSearchTerm('');
+                    setNewIdea(searchTerm);
+                    document.querySelector('textarea')?.focus();
+                  }}
+                  className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg transition-colors"
+                >
+                  Create this idea
+                </button>
+              </div>
+            </div>
+          ) : selectedCategory ? (
+            <div className="max-w-md mx-auto">
+              <div className="text-6xl mb-6">🏷️</div>
+              <h3 className="text-2xl font-semibold text-gray-300 mb-3">No ideas in this category</h3>
+              <p className="text-gray-500 mb-6">
+                No ideas found with the tag "<span className="text-blue-400 font-medium">#{selectedCategory}</span>". 
+                Be the first to create an idea in this category!
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <button 
+                  onClick={() => setSelectedCategory('')}
+                  className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg transition-colors"
+                >
+                  View All Ideas
+                </button>
+                <button 
+                  onClick={() => {
+                    setNewTags(selectedCategory);
+                    document.querySelector('textarea')?.focus();
+                  }}
+                  className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg transition-colors"
+                >
+                  Create idea with this tag
+                </button>
+              </div>
             </div>
           ) : (
-            <div>
-              <div className="text-4xl mb-4">💡</div>
-              <h3 className="text-xl font-semibold text-gray-300 mb-2">No ideas yet</h3>
-              <p className="text-gray-500 mb-4">Be the first to share your brilliant idea!</p>
-              {showTrendingRepos ? null : (
+            <div className="max-w-lg mx-auto">
+              <div className="text-6xl mb-6">💡</div>
+              <h3 className="text-3xl font-semibold text-gray-300 mb-4">Share your brilliant ideas!</h3>
+              <p className="text-gray-500 mb-8 text-lg leading-relaxed">
+                This is where great ideas come to life. Whether it's a new feature, a creative solution, 
+                or an innovative project - your thoughts matter here.
+              </p>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                <div className="bg-slate-800 p-4 rounded-lg">
+                  <div className="text-2xl mb-2">🚀</div>
+                  <h4 className="text-white font-medium mb-1">Quick Start</h4>
+                  <p className="text-gray-400 text-sm">Jump right in and share your first idea</p>
+                </div>
+                <div className="bg-slate-800 p-4 rounded-lg">
+                  <div className="text-2xl mb-2">🔥</div>
+                  <h4 className="text-white font-medium mb-1">Get Inspired</h4>
+                  <p className="text-gray-400 text-sm">Browse trending GitHub repos for ideas</p>
+                </div>
+              </div>
+              
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <button 
-                  onClick={() => setShowTrendingRepos(true)}
-                  className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded"
+                  onClick={() => document.querySelector('textarea')?.focus()}
+                  className="bg-blue-500 hover:bg-blue-600 text-white px-8 py-4 rounded-lg transition-colors font-semibold text-lg"
                 >
-                  Get Inspired by Trending Repos
+                  🚀 Create Your First Idea
                 </button>
-              )}
+                {!showTrendingRepos && (
+                  <button 
+                    onClick={() => setShowTrendingRepos(true)}
+                    className="bg-purple-500 hover:bg-purple-600 text-white px-8 py-4 rounded-lg transition-colors font-semibold text-lg"
+                  >
+                    🔥 Explore Trending Repos
+                  </button>
+                )}
+              </div>
+              
+              <div className="mt-8 text-sm text-gray-500">
+                <p>💡 Pro tip: Press <kbd className="bg-slate-700 px-2 py-1 rounded">Ctrl+Enter</kbd> to quickly submit your ideas</p>
+              </div>
             </div>
           )}
         </div>
@@ -847,6 +1189,16 @@ const IdeaBoard = ({ user }) => {
           onClose={handleAccountSettingsClose}
         />
       )}
+
+      {/* Onboarding Tour */}
+      <OnboardingTour
+        isOpen={showOnboarding}
+        onClose={handleOnboardingClose}
+        currentStep={onboardingStep}
+        onNextStep={handleOnboardingNext}
+        onPrevStep={handleOnboardingPrev}
+        totalSteps={8}
+      />
     </div>
   );
 };
