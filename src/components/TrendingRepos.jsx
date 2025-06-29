@@ -63,18 +63,18 @@ const TrendingRepos = ({ onRepoSelect }) => {
   };
 
   return (
-    <div className="bg-slate-800 rounded-lg p-4 mb-6">
-      <h3 className="text-xl font-bold mb-4 text-blue-400">
+    <div className="bg-slate-800 rounded-lg p-3 sm:p-4 mb-6">
+      <h3 className="text-lg sm:text-xl font-bold mb-3 sm:mb-4 text-blue-400">
         🔥 Trending GitHub Repositories
       </h3>
       
       {/* Language Filter */}
-      <div className="mb-4">
+      <div className="mb-3 sm:mb-4">
         <label className="block text-sm font-medium mb-2">Filter by Language:</label>
         <select
           value={selectedLanguage}
           onChange={(e) => setSelectedLanguage(e.target.value)}
-          className="w-full p-2 bg-slate-700 rounded border border-slate-600 text-white"
+          className="w-full p-2 sm:p-3 bg-slate-700 rounded border border-slate-600 text-white text-sm sm:text-base"
         >
           {popularLanguages.map(lang => (
             <option key={lang} value={lang}>
@@ -85,32 +85,34 @@ const TrendingRepos = ({ onRepoSelect }) => {
       </div>
 
       {/* Search Form */}
-      <form onSubmit={handleSearch} className="mb-4 flex gap-2">
+      <form onSubmit={handleSearch} className="mb-3 sm:mb-4 flex flex-col sm:flex-row gap-2">
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search repositories..."
-          className="flex-1 p-2 bg-slate-700 rounded border border-slate-600 text-white"
+          className="flex-1 p-2 sm:p-3 bg-slate-700 rounded sm:rounded-l sm:rounded-r-none border border-slate-600 text-white text-sm sm:text-base"
         />
-        <button
-          type="submit"
-          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
-        >
-          Search
-        </button>
-        {searchQuery && (
+        <div className="flex gap-2">
           <button
-            type="button"
-            onClick={() => {
-              setSearchQuery('');
-              fetchTrendingRepos();
-            }}
-            className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded"
+            type="submit"
+            className="flex-1 sm:flex-none bg-blue-500 hover:bg-blue-600 text-white px-3 sm:px-4 py-2 sm:py-3 rounded sm:rounded-l-none sm:rounded-r text-sm sm:text-base"
           >
-            Clear
+            Search
           </button>
-        )}
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery('');
+                fetchTrendingRepos();
+              }}
+              className="flex-1 sm:flex-none bg-gray-500 hover:bg-gray-600 text-white px-3 sm:px-4 py-2 sm:py-3 rounded text-sm sm:text-base"
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </form>
 
       {/* Loading State */}
@@ -123,38 +125,38 @@ const TrendingRepos = ({ onRepoSelect }) => {
 
       {/* Error State */}
       {error && (
-        <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded mb-4">
+        <div className="bg-red-900 border border-red-700 text-red-200 px-3 sm:px-4 py-2 sm:py-3 rounded mb-3 sm:mb-4 text-sm sm:text-base">
           {error}
         </div>
       )}
 
       {/* Repositories List */}
       {!loading && !error && (
-        <div className="space-y-3 max-h-96 overflow-y-auto">
+        <div className="space-y-2 sm:space-y-3 max-h-64 sm:max-h-96 overflow-y-auto">
           {repos.map((repo) => (
             <div
               key={repo.id}
-              className="bg-slate-700 p-3 rounded border border-slate-600 hover:border-blue-500 transition-colors cursor-pointer"
+              className="bg-slate-700 p-2 sm:p-3 rounded border border-slate-600 hover:border-blue-500 transition-colors cursor-pointer"
               onClick={() => handleRepoSelect(repo)}
             >
               <div className="flex items-start justify-between">
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <img
                       src={repo.avatar}
                       alt={repo.owner}
-                      className="w-5 h-5 rounded-full"
+                      className="w-4 h-4 sm:w-5 sm:h-5 rounded-full flex-shrink-0"
                     />
-                    <h4 className="font-semibold text-blue-300">
+                    <h4 className="font-semibold text-blue-300 text-sm sm:text-base truncate">
                       {repo.fullName}
                     </h4>
                   </div>
                   {repo.description && (
-                    <p className="text-sm text-gray-300 mb-2 line-clamp-2">
+                    <p className="text-xs sm:text-sm text-gray-300 mb-2 line-clamp-2">
                       {repo.description}
                     </p>
                   )}
-                  <div className="flex items-center gap-4 text-xs text-gray-400">
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-gray-400">
                     {repo.language && (
                       <span className="flex items-center gap-1">
                         <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
@@ -170,7 +172,7 @@ const TrendingRepos = ({ onRepoSelect }) => {
                     e.stopPropagation();
                     window.open(repo.url, '_blank');
                   }}
-                  className="text-blue-400 hover:text-blue-300 text-sm"
+                  className="text-blue-400 hover:text-blue-300 text-xs sm:text-sm ml-2 flex-shrink-0"
                 >
                   View →
                 </button>
@@ -182,7 +184,7 @@ const TrendingRepos = ({ onRepoSelect }) => {
 
       {/* Empty State */}
       {!loading && !error && repos.length === 0 && (
-        <div className="text-center py-8 text-gray-400">
+        <div className="text-center py-6 sm:py-8 text-gray-400 text-sm sm:text-base">
           <p>No repositories found. Try adjusting your search or language filter.</p>
         </div>
       )}

@@ -33,15 +33,15 @@ function App() {
 
   return (
     <div className="bg-slate-900 min-h-screen text-white">
-      <nav className="flex justify-between items-center p-4 bg-slate-800">
-        <h1 className="text-xl font-bold">Idea Board</h1>
+      <nav className="flex justify-between items-center p-3 sm:p-4 bg-slate-800">
+        <h1 className="text-lg sm:text-xl font-bold">Idea Board</h1>
         {user && (
-          <button onClick={handleLogout} className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded">
+          <button onClick={handleLogout} className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-3 sm:px-4 rounded text-sm sm:text-base">
             Logout
           </button>
         )}
       </nav>
-      <main className="p-4">
+      <main className="p-3 sm:p-4">
         {user ? <IdeaBoard user={user} /> : <Login />}
       </main>
     </div>

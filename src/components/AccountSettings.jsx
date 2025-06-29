@@ -112,36 +112,36 @@ const AccountSettings = ({ user, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold">Account Settings</h2>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-slate-800 rounded-lg p-4 sm:p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-4 sm:mb-6">
+          <h2 className="text-xl sm:text-2xl font-bold">Account Settings</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white text-xl"
+            className="text-gray-400 hover:text-white text-lg sm:text-xl"
           >
             ✕
           </button>
         </div>
 
-        <div className="mb-6">
-          <p className="text-gray-300 mb-4">
-            Current email: <span className="font-mono text-blue-300">{user.email}</span>
+        <div className="mb-4 sm:mb-6">
+          <p className="text-gray-300 mb-3 sm:mb-4 text-sm sm:text-base">
+            Current email: <span className="font-mono text-blue-300 break-all">{user.email}</span>
           </p>
           
           {currentUsername ? (
-            <p className="text-gray-300 mb-4">
+            <p className="text-gray-300 mb-3 sm:mb-4 text-sm sm:text-base">
               Current username: <span className="font-mono text-green-300">@{currentUsername}</span>
             </p>
           ) : (
-            <p className="text-yellow-300 mb-4">
+            <p className="text-yellow-300 mb-3 sm:mb-4 text-sm sm:text-base">
               ⚠️ No username set. Create one to display your name instead of email.
             </p>
           )}
         </div>
 
-        <form onSubmit={handleUpdateUsername}>
-          <div className="mb-4">
+        <form onSubmit={handleUpdateUsername} className="space-y-3 sm:space-y-4">
+          <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
               {currentUsername ? 'Update Username' : 'Create Username'}
             </label>
@@ -150,34 +150,34 @@ const AccountSettings = ({ user, onClose }) => {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="Enter username"
-              className="w-full p-2 bg-slate-700 rounded border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full p-3 bg-slate-700 rounded border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm sm:text-base"
             />
           </div>
 
-          {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
-          {success && <p className="text-green-500 text-sm mb-4">{success}</p>}
+          {error && <p className="text-red-500 text-xs sm:text-sm">{error}</p>}
+          {success && <p className="text-green-500 text-xs sm:text-sm">{success}</p>}
 
-          <div className="mb-4 p-3 bg-blue-900 border border-blue-700 rounded text-sm">
+          <div className="p-2 sm:p-3 bg-blue-900 border border-blue-700 rounded text-xs sm:text-sm">
             <p className="text-blue-200 mb-1">Username requirements:</p>
             <ul className="text-blue-300 text-xs space-y-1">
               <li>• At least 3 characters long</li>
               <li>• Letters, numbers, and underscores only</li>
-              <li>• Must be unique across all users</li>
+              <li>• Must be unique</li>
             </ul>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-700 text-white font-bold py-2 px-4 rounded transition-colors"
+              className="flex-1 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-700 text-white font-bold py-2 sm:py-3 px-4 rounded transition-colors text-sm sm:text-base"
             >
               {loading ? 'Updating...' : (currentUsername ? 'Update Username' : 'Create Username')}
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded transition-colors"
+              className="px-4 py-2 sm:py-3 bg-slate-600 hover:bg-slate-500 text-white rounded transition-colors text-sm sm:text-base"
             >
               Cancel
             </button>

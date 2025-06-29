@@ -195,10 +195,11 @@ const IdeaBoard = ({ user }) => {
   }, [ideas, sortBy]);
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h2 className="text-3xl font-bold">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+      {/* Header Section */}
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 space-y-4 sm:space-y-0">
+        <div className="flex-1">
+          <h2 className="text-2xl sm:text-3xl font-bold break-words">
             Welcome, {user.email ? (userProfile?.username || user.email) : 'Guest User'}
           </h2>
           {!user.email && (
@@ -217,18 +218,18 @@ const IdeaBoard = ({ user }) => {
             </p>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
           {user.email && (
             <button
               onClick={() => setShowAccountSettings(true)}
-              className="bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-4 rounded transition-colors"
+              className="bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-4 rounded transition-colors text-sm sm:text-base"
             >
               ⚙️ Settings
             </button>
           )}
           <button
             onClick={() => setShowTrendingRepos(!showTrendingRepos)}
-            className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded"
+            className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded text-sm sm:text-base"
           >
             {showTrendingRepos ? 'Hide' : 'Show'} Trending Repos
           </button>
@@ -237,21 +238,23 @@ const IdeaBoard = ({ user }) => {
 
       {/* Trending Repositories Section */}
       {showTrendingRepos && (
-        <TrendingRepos onRepoSelect={handleRepoSelect} />
+        <div className="mb-6">
+          <TrendingRepos onRepoSelect={handleRepoSelect} />
+        </div>
       )}
 
       {/* Selected Repository Info */}
       {selectedRepo && (
-        <div className="bg-blue-900 border border-blue-700 rounded-lg p-4 mb-6">
+        <div className="bg-blue-900 border border-blue-700 rounded-lg p-3 sm:p-4 mb-6">
           <div className="flex justify-between items-start">
-            <div>
-              <h4 className="font-semibold text-blue-200 mb-2">
+            <div className="flex-1 min-w-0">
+              <h4 className="font-semibold text-blue-200 mb-2 text-sm sm:text-base">
                 💡 Inspired by: {selectedRepo.fullName}
               </h4>
               {selectedRepo.description && (
-                <p className="text-blue-300 text-sm mb-2">{selectedRepo.description}</p>
+                <p className="text-blue-300 text-xs sm:text-sm mb-2 line-clamp-2">{selectedRepo.description}</p>
               )}
-              <div className="flex gap-4 text-xs text-blue-400">
+              <div className="flex flex-wrap gap-2 sm:gap-4 text-xs text-blue-400">
                 <span>⭐ {selectedRepo.stars}</span>
                 <span>🍴 {selectedRepo.forks}</span>
                 {selectedRepo.language && (
@@ -261,7 +264,7 @@ const IdeaBoard = ({ user }) => {
             </div>
             <button
               onClick={clearSelectedRepo}
-              className="text-blue-400 hover:text-blue-300 text-sm"
+              className="text-blue-400 hover:text-blue-300 text-sm ml-2 flex-shrink-0"
             >
               ✕
             </button>
@@ -278,22 +281,22 @@ const IdeaBoard = ({ user }) => {
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="Your name (optional)"
-              className="w-full p-2 bg-slate-700 rounded border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
+              className="w-full p-3 sm:p-2 bg-slate-700 rounded border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2 text-sm sm:text-base"
             />
             <p className="text-xs text-gray-400">
               Add your name to identify your ideas (optional)
             </p>
           </div>
         )}
-        <form onSubmit={handleSubmit} className="flex">
+        <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-2">
           <input
             type="text"
             value={newIdea}
             onChange={(e) => setNewIdea(e.target.value)}
             placeholder={selectedRepo ? "Modify your inspired idea..." : "What's your next big idea?"}
-            className="flex-grow p-2 bg-slate-700 rounded-l border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 p-3 sm:p-2 bg-slate-700 rounded sm:rounded-l sm:rounded-r-none border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm sm:text-base"
           />
-          <button type="submit" className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-r">
+          <button type="submit" className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 sm:py-2 px-4 rounded sm:rounded-l-none sm:rounded-r text-sm sm:text-base">
             Add Idea
           </button>
         </form>
@@ -301,12 +304,12 @@ const IdeaBoard = ({ user }) => {
 
       {/* Sorting Controls */}
       <div className="mb-6">
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
           <span className="text-sm text-gray-400">Sort by:</span>
-          <div className="flex bg-slate-700 rounded-lg p-1">
+          <div className="flex bg-slate-700 rounded-lg p-1 w-full sm:w-auto">
             <button
               onClick={() => setSortBy('hot')}
-              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+              className={`flex-1 sm:flex-none px-3 py-2 sm:py-1 rounded text-sm font-medium transition-colors ${
                 sortBy === 'hot'
                   ? 'bg-blue-500 text-white'
                   : 'text-gray-300 hover:text-white hover:bg-slate-600'
@@ -316,7 +319,7 @@ const IdeaBoard = ({ user }) => {
             </button>
             <button
               onClick={() => setSortBy('top')}
-              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+              className={`flex-1 sm:flex-none px-3 py-2 sm:py-1 rounded text-sm font-medium transition-colors ${
                 sortBy === 'top'
                   ? 'bg-blue-500 text-white'
                   : 'text-gray-300 hover:text-white hover:bg-slate-600'
@@ -326,7 +329,7 @@ const IdeaBoard = ({ user }) => {
             </button>
             <button
               onClick={() => setSortBy('new')}
-              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+              className={`flex-1 sm:flex-none px-3 py-2 sm:py-1 rounded text-sm font-medium transition-colors ${
                 sortBy === 'new'
                   ? 'bg-blue-500 text-white'
                   : 'text-gray-300 hover:text-white hover:bg-slate-600'
@@ -344,80 +347,78 @@ const IdeaBoard = ({ user }) => {
       </div>
 
       {/* Ideas List */}
-      <div>
+      <div className="space-y-3">
         {sortedIdeas.map((idea, index) => {
           const hasVoted = idea.votedBy?.includes(user.uid);
           const voteCount = idea.votes || 0;
           
           return (
-            <div key={idea.id} className="bg-slate-800 p-4 rounded-lg mb-3 shadow">
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="text-sm text-gray-400 font-mono">
-                      #{index + 1}
+            <div key={idea.id} className="bg-slate-800 p-3 sm:p-4 rounded-lg shadow">
+              <div className="space-y-3">
+                <div className="flex items-start gap-2 sm:gap-3">
+                  <span className="text-xs sm:text-sm text-gray-400 font-mono flex-shrink-0 mt-1">
+                    #{index + 1}
+                  </span>
+                  <p className="flex-1 text-sm sm:text-base leading-relaxed">{idea.text}</p>
+                </div>
+                
+                {/* User Info */}
+                <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                  <span>
+                    by {idea.userDisplayName || idea.userEmail || 'Anonymous'}
+                  </span>
+                  <span className="text-gray-600">•</span>
+                  <span>
+                    {idea.createdAt?.toDate?.() ? 
+                      idea.createdAt.toDate().toLocaleDateString() : 
+                      new Date(idea.createdAt).toLocaleDateString()
+                    }
+                  </span>
+                </div>
+                
+                {/* Vote Button and Count */}
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => handleVote(idea.id, voteCount, idea.votedBy)}
+                    className={`flex items-center gap-1 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                      hasVoted
+                        ? 'bg-yellow-500 text-yellow-900 hover:bg-yellow-400'
+                        : 'bg-slate-600 text-gray-300 hover:bg-slate-500'
+                    }`}
+                  >
+                    {hasVoted ? '⭐' : '☆'} {voteCount}
+                  </button>
+                  {voteCount > 0 && (
+                    <span className="text-xs text-gray-400">
+                      {voteCount === 1 ? '1 vote' : `${voteCount} votes`}
                     </span>
-                    <p className="flex-1">{idea.text}</p>
-                  </div>
-                  
-                  {/* User Info */}
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xs text-gray-500">
-                      by {idea.userDisplayName || idea.userEmail || 'Anonymous'}
-                    </span>
-                    <span className="text-xs text-gray-600">•</span>
-                    <span className="text-xs text-gray-500">
-                      {idea.createdAt?.toDate?.() ? 
-                        idea.createdAt.toDate().toLocaleDateString() : 
-                        new Date(idea.createdAt).toLocaleDateString()
-                      }
-                    </span>
-                  </div>
-                  
-                  {/* Vote Button and Count */}
-                  <div className="flex items-center gap-2 mb-3">
-                    <button
-                      onClick={() => handleVote(idea.id, voteCount, idea.votedBy)}
-                      className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium transition-colors ${
-                        hasVoted
-                          ? 'bg-yellow-500 text-yellow-900 hover:bg-yellow-400'
-                          : 'bg-slate-600 text-gray-300 hover:bg-slate-500'
-                      }`}
-                    >
-                      {hasVoted ? '⭐' : '☆'} {voteCount}
-                    </button>
-                    {voteCount > 0 && (
-                      <span className="text-xs text-gray-400">
-                        {voteCount === 1 ? '1 vote' : `${voteCount} votes`}
+                  )}
+                </div>
+
+                {idea.inspiredBy && (
+                  <div className="bg-slate-700 rounded p-3 text-sm">
+                    <p className="text-blue-400 mb-2">
+                      💡 Inspired by: <a 
+                        href={idea.inspiredBy.repoUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-blue-300 hover:text-blue-200 underline break-all"
+                      >
+                        {idea.inspiredBy.repoName}
+                      </a>
+                    </p>
+                    {idea.inspiredBy.repoDescription && (
+                      <p className="text-gray-400 text-xs mb-2 line-clamp-2">
+                        {idea.inspiredBy.repoDescription}
+                      </p>
+                    )}
+                    {idea.inspiredBy.language && (
+                      <span className="inline-block bg-blue-600 text-blue-200 text-xs px-2 py-1 rounded">
+                        {idea.inspiredBy.language}
                       </span>
                     )}
                   </div>
-
-                  {idea.inspiredBy && (
-                    <div className="bg-slate-700 rounded p-2 text-sm">
-                      <p className="text-blue-400 mb-1">
-                        💡 Inspired by: <a 
-                          href={idea.inspiredBy.repoUrl} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-blue-300 hover:text-blue-200 underline"
-                        >
-                          {idea.inspiredBy.repoName}
-                        </a>
-                      </p>
-                      {idea.inspiredBy.repoDescription && (
-                        <p className="text-gray-400 text-xs">
-                          {idea.inspiredBy.repoDescription}
-                        </p>
-                      )}
-                      {idea.inspiredBy.language && (
-                        <span className="inline-block bg-blue-600 text-blue-200 text-xs px-2 py-1 rounded mt-1">
-                          {idea.inspiredBy.language}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
             </div>
           );
