@@ -7,7 +7,8 @@ service cloud.firestore {
       allow create: if request.auth != null;
       allow update: if request.auth != null && 
         (request.auth.uid == resource.data.userId || 
-         request.auth.uid in resource.data.votedBy);
+         // Allow voting updates for any authenticated user
+         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes', 'votedBy'])));
       allow delete: if request.auth != null && 
         request.auth.uid == resource.data.userId;
     }

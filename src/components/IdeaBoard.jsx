@@ -12,7 +12,7 @@ const IdeaBoard = ({ user }) => {
   const [displayName, setDisplayName] = useState('');
   const [userProfile, setUserProfile] = useState(null);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
-  const [sortBy, setSortBy] = useState('new'); // 'new', 'top', 'hot'
+  const [sortBy, setSortBy] = useState(null); // null = chronological order, 'new', 'top', 'hot'
   const [sortedIdeas, setSortedIdeas] = useState([]);
 
   // Fetch user profile for registered users
@@ -90,7 +90,10 @@ const IdeaBoard = ({ user }) => {
       userDisplayName: user.email ? (userProfile?.username || user.email) : (displayName || 'Anonymous'),
       createdAt: new Date(),
       votes: 0,
-      votedBy: []
+      votedBy: {
+        upvotes: [],
+        downvotes: []
+      }
     };
 
     // Add repository information if a repo was selected
@@ -109,21 +112,79 @@ const IdeaBoard = ({ user }) => {
   };
 
   // Handle voting on an idea
-  const handleVote = async (ideaId, currentVotes, votedBy) => {
-    const ideaRef = doc(db, 'ideas', ideaId);
-    const hasVoted = votedBy?.includes(user.uid);
+  const handleVote = async (ideaId, currentVotes, votedBy, voteType) => {
+    try {
+      console.log('Starting vote update:', { ideaId, currentVotes, votedBy, voteType, userId: user.uid });
+      
+      const ideaRef = doc(db, 'ideas', ideaId);
+      
+      // Get current voting state
+      const currentVotedBy = votedBy || {};
+      const upvotes = currentVotedBy.upvotes || [];
+      const downvotes = currentVotedBy.downvotes || [];
+      
+      const hasUpvoted = upvotes.includes(user.uid);
+      const hasDownvoted = downvotes.includes(user.uid);
 
-    if (hasVoted) {
-      // Remove vote
-      await updateDoc(ideaRef, {
-        votes: increment(-1),
-        votedBy: arrayRemove(user.uid)
-      });
-    } else {
-      // Add vote
-      await updateDoc(ideaRef, {
-        votes: increment(1),
-        votedBy: arrayUnion(user.uid)
+      console.log('Current voting state:', { upvotes, downvotes, hasUpvoted, hasDownvoted });
+
+      // Create new vote arrays
+      let newUpvotes = [...upvotes];
+      let newDownvotes = [...downvotes];
+      let voteChange = 0;
+
+      if (voteType === 'upvote') {
+        if (hasUpvoted) {
+          // Remove upvote
+          newUpvotes = newUpvotes.filter(id => id !== user.uid);
+          voteChange = -1;
+          console.log('Removing upvote');
+        } else {
+          // Add upvote
+          newUpvotes.push(user.uid);
+          // Remove from downvotes if exists
+          newDownvotes = newDownvotes.filter(id => id !== user.uid);
+          voteChange = hasDownvoted ? 2 : 1; // +2 if removing downvote, +1 if new upvote
+          console.log('Adding upvote, removing downvote if exists');
+        }
+      } else if (voteType === 'downvote') {
+        if (hasDownvoted) {
+          // Remove downvote
+          newDownvotes = newDownvotes.filter(id => id !== user.uid);
+          voteChange = 1;
+          console.log('Removing downvote');
+        } else {
+          // Add downvote
+          newDownvotes.push(user.uid);
+          // Remove from upvotes if exists
+          newUpvotes = newUpvotes.filter(id => id !== user.uid);
+          voteChange = hasUpvoted ? -2 : -1; // -2 if removing upvote, -1 if new downvote
+          console.log('Adding downvote, removing upvote if exists');
+        }
+      }
+
+      console.log('New voting state:', { newUpvotes, newDownvotes, voteChange });
+
+      // Update the document
+      const updateData = {
+        votes: increment(voteChange),
+        'votedBy.upvotes': newUpvotes,
+        'votedBy.downvotes': newDownvotes
+      };
+      
+      console.log('Updating document with:', updateData);
+      
+      await updateDoc(ideaRef, updateData);
+
+      console.log(`Vote updated successfully: ${voteType}, change: ${voteChange}, new votes: ${currentVotes + voteChange}`);
+    } catch (error) {
+      console.error('Error updating vote:', error);
+      console.error('Error details:', {
+        code: error.code,
+        message: error.message,
+        ideaId,
+        voteType,
+        userId: user.uid
       });
     }
   };
@@ -184,6 +245,7 @@ const IdeaBoard = ({ user }) => {
           return hotScoreB - hotScoreA;
         
         default:
+          // Default: chronological order (newest first)
           return dateB - dateA;
       }
     });
@@ -308,6 +370,16 @@ const IdeaBoard = ({ user }) => {
           <span className="text-sm text-gray-400">Sort by:</span>
           <div className="flex bg-slate-700 rounded-lg p-1 w-full sm:w-auto">
             <button
+              onClick={() => setSortBy(null)}
+              className={`flex-1 sm:flex-none px-3 py-2 sm:py-1 rounded text-sm font-medium transition-colors ${
+                sortBy === null
+                  ? 'bg-blue-500 text-white'
+                  : 'text-gray-300 hover:text-white hover:bg-slate-600'
+              }`}
+            >
+              📅 Latest
+            </button>
+            <button
               onClick={() => setSortBy('hot')}
               className={`flex-1 sm:flex-none px-3 py-2 sm:py-1 rounded text-sm font-medium transition-colors ${
                 sortBy === 'hot'
@@ -340,6 +412,7 @@ const IdeaBoard = ({ user }) => {
           </div>
         </div>
         <div className="text-xs text-gray-500">
+          {sortBy === null && '📅 Latest: Most recent ideas posted (chronological order)'}
           {sortBy === 'hot' && '🔥 Hot: Trending ideas based on votes and recency'}
           {sortBy === 'top' && '⭐ Top: Most voted ideas of all time'}
           {sortBy === 'new' && '🆕 New: Latest ideas posted'}
@@ -349,7 +422,11 @@ const IdeaBoard = ({ user }) => {
       {/* Ideas List */}
       <div className="space-y-3">
         {sortedIdeas.map((idea, index) => {
-          const hasVoted = idea.votedBy?.includes(user.uid);
+          // Handle compatibility with old voting structure
+          const currentVotedBy = idea.votedBy || {};
+          const hasUpvoted = currentVotedBy.upvotes?.includes(user.uid) || 
+                            (Array.isArray(currentVotedBy) && currentVotedBy.includes(user.uid));
+          const hasDownvoted = currentVotedBy.downvotes?.includes(user.uid);
           const voteCount = idea.votes || 0;
           
           return (
@@ -379,18 +456,31 @@ const IdeaBoard = ({ user }) => {
                 {/* Vote Button and Count */}
                 <div className="flex items-center gap-3">
                   <button
-                    onClick={() => handleVote(idea.id, voteCount, idea.votedBy)}
+                    onClick={(e) => { e.preventDefault(); handleVote(idea.id, voteCount, idea.votedBy, 'upvote'); }}
                     className={`flex items-center gap-1 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                      hasVoted
-                        ? 'bg-yellow-500 text-yellow-900 hover:bg-yellow-400'
+                      hasUpvoted
+                        ? 'bg-green-500 text-green-900 hover:bg-green-400'
                         : 'bg-slate-600 text-gray-300 hover:bg-slate-500'
                     }`}
                   >
-                    {hasVoted ? '⭐' : '☆'} {voteCount}
+                    {hasUpvoted ? '👍' : '👍'} 
                   </button>
-                  {voteCount > 0 && (
+                  <span className={`text-sm font-medium ${voteCount > 0 ? 'text-green-400' : voteCount < 0 ? 'text-red-400' : 'text-gray-400'}`}>
+                    {voteCount > 0 ? `+${voteCount}` : voteCount}
+                  </span>
+                  <button
+                    onClick={(e) => { e.preventDefault(); handleVote(idea.id, voteCount, idea.votedBy, 'downvote'); }}
+                    className={`flex items-center gap-1 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                      hasDownvoted
+                        ? 'bg-red-500 text-red-900 hover:bg-red-400'
+                        : 'bg-slate-600 text-gray-300 hover:bg-slate-500'
+                    }`}
+                  >
+                    {hasDownvoted ? '👎' : '👎'}
+                  </button>
+                  {Math.abs(voteCount) > 0 && (
                     <span className="text-xs text-gray-400">
-                      {voteCount === 1 ? '1 vote' : `${voteCount} votes`}
+                      {Math.abs(voteCount) === 1 ? '1 vote' : `${Math.abs(voteCount)} votes`}
                     </span>
                   )}
                 </div>
