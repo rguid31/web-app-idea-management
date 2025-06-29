@@ -10,7 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tailwindcss/typography": "^0.5.16",
     "firebase": "^10.14.1",
+    "marked": "^16.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

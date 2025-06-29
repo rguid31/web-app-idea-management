@@ -3,6 +3,9 @@ import { db } from '../firebase';
 import { collection, addDoc, onSnapshot, query, where, doc, updateDoc, increment, arrayUnion, arrayRemove, getDoc, getDocs } from 'firebase/firestore';
 import TrendingRepos from './TrendingRepos';
 import AccountSettings from './AccountSettings';
+import { renderMarkdown, hasMarkdown } from '../utils/markdown';
+import SwipeableIdeaCard from './SwipeableIdeaCard';
+import BottomSheet from './BottomSheet';
 
 const IdeaBoard = ({ user }) => {
   const [ideas, setIdeas] = useState([]);
@@ -14,6 +17,17 @@ const IdeaBoard = ({ user }) => {
   const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [sortBy, setSortBy] = useState(null); // null = chronological order, 'new', 'top', 'hot'
   const [sortedIdeas, setSortedIdeas] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [votingStates, setVotingStates] = useState({}); // Track voting loading states
+  const [notification, setNotification] = useState(null); // For feedback messages
+  const [newTags, setNewTags] = useState(''); // Tags for new ideas
+  const [availableTags, setAvailableTags] = useState([]); // All available tags
+  const [selectedCategory, setSelectedCategory] = useState(''); // Category filter
+  const [displayedIdeasCount, setDisplayedIdeasCount] = useState(20); // Number of ideas to display
+  const [isLoadingMore, setIsLoadingMore] = useState(false); // Loading state for infinite scroll
+  const [isMobile, setIsMobile] = useState(false); // Track mobile screen size
+  const [isScrolled, setIsScrolled] = useState(false); // Track scroll position for sticky header
 
   // Fetch user profile for registered users
   const fetchUserProfile = async () => {
@@ -62,16 +76,15 @@ const IdeaBoard = ({ user }) => {
           ideasData.push(ideaData);
         }
         
-        // Temporarily remove sorting while index builds
-        // ideasData.sort((a, b) => {
-        //   const votesA = a.votes || 0;
-        //   const votesB = b.votes || 0;
-        //   if (votesA !== votesB) {
-        //     return votesB - votesA; // Sort by votes descending
-        //   }
-        //   // If votes are equal, sort by creation date (newest first)
-        //   return new Date(b.createdAt?.toDate?.() || b.createdAt) - new Date(a.createdAt?.toDate?.() || a.createdAt);
-        // });
+        // Collect all unique tags
+        const allTags = new Set();
+        ideasData.forEach(idea => {
+          if (idea.tags && Array.isArray(idea.tags)) {
+            idea.tags.forEach(tag => allTags.add(tag));
+          }
+        });
+        setAvailableTags(Array.from(allTags).sort());
+        
         setIdeas(ideasData);
       });
       return () => unsubscribe();
@@ -81,38 +94,68 @@ const IdeaBoard = ({ user }) => {
   // Create a new idea
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (newIdea.trim() === '') return;
+    if (newIdea.trim() === '' || newIdea.length > 500) return;
     
-    const ideaData = {
-      text: newIdea,
-      userId: user.uid,
-      userEmail: user.email || null,
-      userDisplayName: user.email ? (userProfile?.username || user.email) : (displayName || 'Anonymous'),
-      createdAt: new Date(),
-      votes: 0,
-      votedBy: {
-        upvotes: [],
-        downvotes: []
-      }
-    };
-
-    // Add repository information if a repo was selected
-    if (selectedRepo) {
-      ideaData.inspiredBy = {
-        repoName: selectedRepo.fullName,
-        repoUrl: selectedRepo.url,
-        repoDescription: selectedRepo.description,
-        language: selectedRepo.language
+    setIsSubmitting(true);
+    
+    try {
+      // Process tags
+      const tags = newTags
+        .split(',')
+        .map(tag => tag.trim().toLowerCase())
+        .filter(tag => tag.length > 0 && tag.length <= 20)
+        .slice(0, 5); // Limit to 5 tags
+      
+      const ideaData = {
+        text: newIdea,
+        userId: user.uid,
+        userEmail: user.email || null,
+        userDisplayName: user.email ? (userProfile?.username || user.email) : (displayName || 'Anonymous'),
+        createdAt: new Date(),
+        votes: 0,
+        votedBy: {
+          upvotes: [],
+          downvotes: []
+        },
+        tags: tags
       };
-    }
 
-    await addDoc(collection(db, 'ideas'), ideaData);
-    setNewIdea('');
-    setSelectedRepo(null);
+      // Add repository information if a repo was selected
+      if (selectedRepo) {
+        ideaData.inspiredBy = {
+          repoName: selectedRepo.fullName,
+          repoUrl: selectedRepo.url,
+          repoDescription: selectedRepo.description,
+          language: selectedRepo.language
+        };
+      }
+
+      await addDoc(collection(db, 'ideas'), ideaData);
+      setNewIdea('');
+      setNewTags('');
+      setSelectedRepo(null);
+      showNotification('💡 Idea added successfully!', 'success');
+    } catch (error) {
+      console.error('Error adding idea:', error);
+      showNotification('❌ Failed to add idea. Please try again.', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Show notification
+  const showNotification = (message, type = 'info') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 3000);
   };
 
   // Handle voting on an idea
   const handleVote = async (ideaId, currentVotes, votedBy, voteType) => {
+    // Prevent multiple votes while one is processing
+    if (votingStates[ideaId]) return;
+    
+    setVotingStates(prev => ({ ...prev, [ideaId]: true }));
+    
     try {
       console.log('Starting vote update:', { ideaId, currentVotes, votedBy, voteType, userId: user.uid });
       
@@ -179,13 +222,9 @@ const IdeaBoard = ({ user }) => {
       console.log(`Vote updated successfully: ${voteType}, change: ${voteChange}, new votes: ${currentVotes + voteChange}`);
     } catch (error) {
       console.error('Error updating vote:', error);
-      console.error('Error details:', {
-        code: error.code,
-        message: error.message,
-        ideaId,
-        voteType,
-        userId: user.uid
-      });
+      showNotification('❌ Failed to update vote. Please try again.', 'error');
+    } finally {
+      setVotingStates(prev => ({ ...prev, [ideaId]: false }));
     }
   };
 
@@ -251,13 +290,147 @@ const IdeaBoard = ({ user }) => {
     });
   };
 
-  // Update sorted ideas when ideas or sort criteria change
+  // Filter and sort ideas
+  const filteredAndSortedIdeas = () => {
+    let filtered = ideas;
+    
+    // Apply search filter
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = ideas.filter(idea => 
+        idea.text.toLowerCase().includes(searchLower) ||
+        (idea.userDisplayName && idea.userDisplayName.toLowerCase().includes(searchLower)) ||
+        (idea.inspiredBy && idea.inspiredBy.repoName.toLowerCase().includes(searchLower)) ||
+        (idea.tags && idea.tags.some(tag => tag.toLowerCase().includes(searchLower)))
+      );
+    }
+    
+    // Apply category filter
+    if (selectedCategory.trim()) {
+      filtered = filtered.filter(idea => 
+        idea.tags && idea.tags.includes(selectedCategory.toLowerCase())
+      );
+    }
+    
+    return sortIdeas(filtered, sortBy);
+  };
+
+  // Update sorted ideas when ideas, sort criteria, search term, or category change
   useEffect(() => {
-    setSortedIdeas(sortIdeas(ideas, sortBy));
-  }, [ideas, sortBy]);
+    setSortedIdeas(filteredAndSortedIdeas());
+    setDisplayedIdeasCount(20); // Reset displayed count when filters change
+  }, [ideas, sortBy, searchTerm, selectedCategory]);
+
+  // Infinite scroll and sticky header effect
+  useEffect(() => {
+    const handleScroll = () => {
+      // Infinite scroll logic
+      if (window.innerHeight + document.documentElement.scrollTop 
+          >= document.documentElement.offsetHeight - 1000 && 
+          displayedIdeasCount < sortedIdeas.length && 
+          !isLoadingMore) {
+        setIsLoadingMore(true);
+        setTimeout(() => {
+          setDisplayedIdeasCount(prev => Math.min(prev + 20, sortedIdeas.length));
+          setIsLoadingMore(false);
+        }, 500); // Small delay to show loading state
+      }
+
+      // Sticky header logic
+      setIsScrolled(window.scrollY > 200);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [displayedIdeasCount, sortedIdeas.length, isLoadingMore]);
+
+  // Mobile detection effect
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640); // sm breakpoint
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+      {/* Sticky Header */}
+      <div className={`fixed top-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-sm border-b border-slate-700 transition-all duration-300 ${
+        isScrolled ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0'
+      }`}>
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between py-3">
+            <div className="flex items-center gap-3">
+              <h1 className="text-lg font-bold text-white">💡 Ideas</h1>
+              {searchTerm && (
+                <span className="text-xs text-gray-400 bg-slate-700 px-2 py-1 rounded">
+                  "{searchTerm}"
+                </span>
+              )}
+              {selectedCategory && (
+                <span className="text-xs text-blue-400 bg-blue-900 px-2 py-1 rounded">
+                  #{selectedCategory}
+                </span>
+              )}
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {/* Quick sort buttons */}
+              <div className="flex bg-slate-700 rounded-lg p-1">
+                <button
+                  onClick={() => setSortBy(null)}
+                  className={`px-2 py-1 rounded text-xs font-medium transition-colors min-h-[32px] touch-manipulation ${
+                    sortBy === null
+                      ? 'bg-blue-500 text-white'
+                      : 'text-gray-300 hover:text-white hover:bg-slate-600'
+                  }`}
+                >
+                  📅
+                </button>
+                <button
+                  onClick={() => setSortBy('hot')}
+                  className={`px-2 py-1 rounded text-xs font-medium transition-colors min-h-[32px] touch-manipulation ${
+                    sortBy === 'hot'
+                      ? 'bg-blue-500 text-white'
+                      : 'text-gray-300 hover:text-white hover:bg-slate-600'
+                  }`}
+                >
+                  🔥
+                </button>
+                <button
+                  onClick={() => setSortBy('top')}
+                  className={`px-2 py-1 rounded text-xs font-medium transition-colors min-h-[32px] touch-manipulation ${
+                    sortBy === 'top'
+                      ? 'bg-blue-500 text-white'
+                      : 'text-gray-300 hover:text-white hover:bg-slate-600'
+                  }`}
+                >
+                  ⭐
+                </button>
+              </div>
+              
+              {/* Quick action buttons */}
+              <button
+                onClick={() => setShowTrendingRepos(!showTrendingRepos)}
+                className="bg-purple-500 hover:bg-purple-600 text-white p-2 rounded text-xs min-h-[32px] touch-manipulation"
+              >
+                🔥
+              </button>
+              
+              <button
+                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                className="bg-slate-600 hover:bg-slate-500 text-white p-2 rounded text-xs min-h-[32px] touch-manipulation"
+              >
+                ↑
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Header Section */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 space-y-4 sm:space-y-0">
         <div className="flex-1">
@@ -284,25 +457,41 @@ const IdeaBoard = ({ user }) => {
           {user.email && (
             <button
               onClick={() => setShowAccountSettings(true)}
-              className="bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-4 rounded transition-colors text-sm sm:text-base"
+              className="bg-slate-600 hover:bg-slate-500 active:bg-slate-700 text-white font-bold py-3 px-4 rounded transition-colors text-sm sm:text-base min-h-[44px] touch-manipulation"
             >
               ⚙️ Settings
             </button>
           )}
           <button
             onClick={() => setShowTrendingRepos(!showTrendingRepos)}
-            className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded text-sm sm:text-base"
+            className="bg-purple-500 hover:bg-purple-600 active:bg-purple-700 text-white font-bold py-3 px-4 rounded text-sm sm:text-base min-h-[44px] touch-manipulation"
           >
-            {showTrendingRepos ? 'Hide' : 'Show'} Trending Repos
+            {isMobile ? '🔥 Trending' : (showTrendingRepos ? 'Hide' : 'Show') + ' Trending Repos'}
           </button>
         </div>
       </div>
 
-      {/* Trending Repositories Section */}
-      {showTrendingRepos && (
+      {/* Trending Repositories Section - Desktop */}
+      {showTrendingRepos && !isMobile && (
         <div className="mb-6">
           <TrendingRepos onRepoSelect={handleRepoSelect} />
         </div>
+      )}
+
+      {/* Trending Repositories Section - Mobile Bottom Sheet */}
+      {isMobile && (
+        <BottomSheet 
+          isOpen={showTrendingRepos} 
+          onClose={() => setShowTrendingRepos(false)}
+          title="🔥 Trending Repositories"
+        >
+          <div className="p-4">
+            <TrendingRepos onRepoSelect={(repo) => {
+              handleRepoSelect(repo);
+              setShowTrendingRepos(false); // Close bottom sheet after selection
+            }} />
+          </div>
+        </BottomSheet>
       )}
 
       {/* Selected Repository Info */}
@@ -334,6 +523,70 @@ const IdeaBoard = ({ user }) => {
         </div>
       )}
 
+      {/* Category Filter */}
+      {availableTags.length > 0 && (
+        <div className="mb-4">
+          <div className="flex flex-wrap gap-2 items-center">
+            <span className="text-sm text-gray-400">Filter by tag:</span>
+            <button
+              onClick={() => setSelectedCategory('')}
+              className={`px-4 py-2 rounded-full text-xs transition-colors min-h-[36px] touch-manipulation ${
+                selectedCategory === ''
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-slate-600 text-gray-300 hover:bg-slate-500 active:bg-slate-400'
+              }`}
+            >
+              All
+            </button>
+            {availableTags.slice(0, 10).map(tag => (
+              <button
+                key={tag}
+                onClick={() => setSelectedCategory(selectedCategory === tag ? '' : tag)}
+                className={`px-4 py-2 rounded-full text-xs transition-colors min-h-[36px] touch-manipulation ${
+                  selectedCategory === tag
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-slate-600 text-gray-300 hover:bg-slate-500 active:bg-slate-400'
+                }`}
+              >
+                {tag}
+              </button>
+            ))}
+            {availableTags.length > 10 && (
+              <span className="text-xs text-gray-500">
+                +{availableTags.length - 10} more
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Search Bar */}
+      <div className="mb-6">
+        <div className="relative">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="🔍 Search ideas, users, tags, or repositories..."
+            className="w-full p-3 bg-slate-700 rounded border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm sm:text-base pl-10"
+          />
+          <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+            🔍
+          </div>
+        </div>
+        {searchTerm && (
+          <div className="mt-2 text-sm text-gray-400">
+            Showing {sortedIdeas.length} result{sortedIdeas.length !== 1 ? 's' : ''} for "{searchTerm}"
+            <button 
+              onClick={() => setSearchTerm('')}
+              className="ml-2 text-blue-400 hover:text-blue-300 underline"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Idea Creation Form */}
       <div className="mb-6">
         {!user.email && (
@@ -350,17 +603,87 @@ const IdeaBoard = ({ user }) => {
             </p>
           </div>
         )}
-        <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-2">
-          <input
-            type="text"
-            value={newIdea}
-            onChange={(e) => setNewIdea(e.target.value)}
-            placeholder={selectedRepo ? "Modify your inspired idea..." : "What's your next big idea?"}
-            className="flex-1 p-3 sm:p-2 bg-slate-700 rounded sm:rounded-l sm:rounded-r-none border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm sm:text-base"
-          />
-          <button type="submit" className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 sm:py-2 px-4 rounded sm:rounded-l-none sm:rounded-r text-sm sm:text-base">
-            Add Idea
-          </button>
+        <form onSubmit={handleSubmit} className="space-y-2">
+          <div className="relative">
+            <textarea
+              rows="3"
+              value={newIdea}
+              onChange={(e) => setNewIdea(e.target.value)}
+              placeholder={selectedRepo ? "Modify your inspired idea..." : "What's your next big idea?"}
+              className={`w-full p-3 bg-slate-700 rounded border focus:outline-none focus:ring-2 text-sm sm:text-base resize-none ${
+                newIdea.length > 500 
+                  ? 'border-red-500 focus:ring-red-500' 
+                  : 'border-slate-600 focus:ring-blue-500'
+              }`}
+              maxLength="500"
+            />
+            <div className={`absolute bottom-2 right-2 text-xs ${
+              newIdea.length > 450 
+                ? 'text-red-400' 
+                : newIdea.length > 400 
+                  ? 'text-yellow-400' 
+                  : 'text-gray-500'
+            }`}>
+              {newIdea.length}/500
+            </div>
+          </div>
+          <div className="relative">
+            <input
+              type="text"
+              value={newTags}
+              onChange={(e) => setNewTags(e.target.value)}
+              placeholder="Add tags (comma-separated, e.g., web, mobile, ai)"
+              className="w-full p-3 bg-slate-700 rounded border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              maxLength="100"
+            />
+            <div className="absolute bottom-2 right-2 text-xs text-gray-500">
+              {newTags.split(',').filter(t => t.trim()).length}/5 tags
+            </div>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button 
+              type="submit" 
+              disabled={isSubmitting || newIdea.trim() === '' || newIdea.length > 500}
+              className={`flex-1 sm:flex-none font-bold py-4 px-6 rounded text-sm sm:text-base transition-all duration-200 min-h-[48px] touch-manipulation ${
+                isSubmitting || newIdea.trim() === '' || newIdea.length > 500
+                  ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                  : 'bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white hover:scale-105 active:scale-95'
+              }`}
+            >
+              {isSubmitting ? '🔄 Adding...' : '💡 Add Idea'}
+            </button>
+            {(newIdea.trim() || newTags.trim()) && (
+              <button
+                type="button"
+                onClick={() => {setNewIdea(''); setNewTags(''); setSelectedRepo(null);}}
+                className="px-4 py-4 bg-slate-600 hover:bg-slate-500 active:bg-slate-700 text-white rounded text-sm transition-colors min-h-[48px] touch-manipulation"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          {newIdea.length > 400 && (
+            <p className={`text-xs ${
+              newIdea.length > 500 ? 'text-red-400' : 'text-yellow-400'
+            }`}>
+              {newIdea.length > 500 
+                ? '⚠️ Idea is too long! Please keep it under 500 characters.' 
+                : `⚠️ Approaching character limit (${500 - newIdea.length} remaining)`
+              }
+            </p>
+          )}
+          <div className="text-xs text-gray-500 mt-2">
+            <details className="cursor-pointer">
+              <summary className="hover:text-gray-400">📝 Formatting supported</summary>
+              <div className="mt-2 space-y-1 bg-slate-700 p-2 rounded text-xs">
+                <div>**bold text** → <strong>bold text</strong></div>
+                <div>*italic text* → <em>italic text</em></div>
+                <div>`code` → <code className="bg-slate-600 px-1 rounded">code</code></div>
+                <div>[link text](https://example.com) → <a href="#" className="text-blue-400">link text</a></div>
+                <div>URLs are automatically linked</div>
+              </div>
+            </details>
+          </div>
         </form>
       </div>
 
@@ -371,40 +694,40 @@ const IdeaBoard = ({ user }) => {
           <div className="flex bg-slate-700 rounded-lg p-1 w-full sm:w-auto">
             <button
               onClick={() => setSortBy(null)}
-              className={`flex-1 sm:flex-none px-3 py-2 sm:py-1 rounded text-sm font-medium transition-colors ${
+              className={`flex-1 sm:flex-none px-3 py-3 sm:py-2 rounded text-sm font-medium transition-colors min-h-[44px] touch-manipulation ${
                 sortBy === null
                   ? 'bg-blue-500 text-white'
-                  : 'text-gray-300 hover:text-white hover:bg-slate-600'
+                  : 'text-gray-300 hover:text-white hover:bg-slate-600 active:bg-slate-500'
               }`}
             >
               📅 Latest
             </button>
             <button
               onClick={() => setSortBy('hot')}
-              className={`flex-1 sm:flex-none px-3 py-2 sm:py-1 rounded text-sm font-medium transition-colors ${
+              className={`flex-1 sm:flex-none px-3 py-3 sm:py-2 rounded text-sm font-medium transition-colors min-h-[44px] touch-manipulation ${
                 sortBy === 'hot'
                   ? 'bg-blue-500 text-white'
-                  : 'text-gray-300 hover:text-white hover:bg-slate-600'
+                  : 'text-gray-300 hover:text-white hover:bg-slate-600 active:bg-slate-500'
               }`}
             >
               🔥 Hot
             </button>
             <button
               onClick={() => setSortBy('top')}
-              className={`flex-1 sm:flex-none px-3 py-2 sm:py-1 rounded text-sm font-medium transition-colors ${
+              className={`flex-1 sm:flex-none px-3 py-3 sm:py-2 rounded text-sm font-medium transition-colors min-h-[44px] touch-manipulation ${
                 sortBy === 'top'
                   ? 'bg-blue-500 text-white'
-                  : 'text-gray-300 hover:text-white hover:bg-slate-600'
+                  : 'text-gray-300 hover:text-white hover:bg-slate-600 active:bg-slate-500'
               }`}
             >
               ⭐ Top
             </button>
             <button
               onClick={() => setSortBy('new')}
-              className={`flex-1 sm:flex-none px-3 py-2 sm:py-1 rounded text-sm font-medium transition-colors ${
+              className={`flex-1 sm:flex-none px-3 py-3 sm:py-2 rounded text-sm font-medium transition-colors min-h-[44px] touch-manipulation ${
                 sortBy === 'new'
                   ? 'bg-blue-500 text-white'
-                  : 'text-gray-300 hover:text-white hover:bg-slate-600'
+                  : 'text-gray-300 hover:text-white hover:bg-slate-600 active:bg-slate-500'
               }`}
             >
               🆕 New
@@ -421,99 +744,101 @@ const IdeaBoard = ({ user }) => {
 
       {/* Ideas List */}
       <div className="space-y-3">
-        {sortedIdeas.map((idea, index) => {
-          // Handle compatibility with old voting structure
-          const currentVotedBy = idea.votedBy || {};
-          const hasUpvoted = currentVotedBy.upvotes?.includes(user.uid) || 
-                            (Array.isArray(currentVotedBy) && currentVotedBy.includes(user.uid));
-          const hasDownvoted = currentVotedBy.downvotes?.includes(user.uid);
-          const voteCount = idea.votes || 0;
-          
-          return (
-            <div key={idea.id} className="bg-slate-800 p-3 sm:p-4 rounded-lg shadow">
-              <div className="space-y-3">
-                <div className="flex items-start gap-2 sm:gap-3">
-                  <span className="text-xs sm:text-sm text-gray-400 font-mono flex-shrink-0 mt-1">
-                    #{index + 1}
-                  </span>
-                  <p className="flex-1 text-sm sm:text-base leading-relaxed">{idea.text}</p>
-                </div>
-                
-                {/* User Info */}
-                <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                  <span>
-                    by {idea.userDisplayName || idea.userEmail || 'Anonymous'}
-                  </span>
-                  <span className="text-gray-600">•</span>
-                  <span>
-                    {idea.createdAt?.toDate?.() ? 
-                      idea.createdAt.toDate().toLocaleDateString() : 
-                      new Date(idea.createdAt).toLocaleDateString()
-                    }
-                  </span>
-                </div>
-                
-                {/* Vote Button and Count */}
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={(e) => { e.preventDefault(); handleVote(idea.id, voteCount, idea.votedBy, 'upvote'); }}
-                    className={`flex items-center gap-1 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                      hasUpvoted
-                        ? 'bg-green-500 text-green-900 hover:bg-green-400'
-                        : 'bg-slate-600 text-gray-300 hover:bg-slate-500'
-                    }`}
-                  >
-                    {hasUpvoted ? '👍' : '👍'} 
-                  </button>
-                  <span className={`text-sm font-medium ${voteCount > 0 ? 'text-green-400' : voteCount < 0 ? 'text-red-400' : 'text-gray-400'}`}>
-                    {voteCount > 0 ? `+${voteCount}` : voteCount}
-                  </span>
-                  <button
-                    onClick={(e) => { e.preventDefault(); handleVote(idea.id, voteCount, idea.votedBy, 'downvote'); }}
-                    className={`flex items-center gap-1 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                      hasDownvoted
-                        ? 'bg-red-500 text-red-900 hover:bg-red-400'
-                        : 'bg-slate-600 text-gray-300 hover:bg-slate-500'
-                    }`}
-                  >
-                    {hasDownvoted ? '👎' : '👎'}
-                  </button>
-                  {Math.abs(voteCount) > 0 && (
-                    <span className="text-xs text-gray-400">
-                      {Math.abs(voteCount) === 1 ? '1 vote' : `${Math.abs(voteCount)} votes`}
-                    </span>
-                  )}
-                </div>
-
-                {idea.inspiredBy && (
-                  <div className="bg-slate-700 rounded p-3 text-sm">
-                    <p className="text-blue-400 mb-2">
-                      💡 Inspired by: <a 
-                        href={idea.inspiredBy.repoUrl} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-blue-300 hover:text-blue-200 underline break-all"
-                      >
-                        {idea.inspiredBy.repoName}
-                      </a>
-                    </p>
-                    {idea.inspiredBy.repoDescription && (
-                      <p className="text-gray-400 text-xs mb-2 line-clamp-2">
-                        {idea.inspiredBy.repoDescription}
-                      </p>
-                    )}
-                    {idea.inspiredBy.language && (
-                      <span className="inline-block bg-blue-600 text-blue-200 text-xs px-2 py-1 rounded">
-                        {idea.inspiredBy.language}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
+        {sortedIdeas.slice(0, displayedIdeasCount).map((idea, index) => (
+          <SwipeableIdeaCard
+            key={idea.id}
+            idea={idea}
+            index={index}
+            user={user}
+            handleVote={handleVote}
+            votingStates={votingStates}
+            setSelectedCategory={setSelectedCategory}
+            selectedCategory={selectedCategory}
+          />
+        ))}
       </div>
+
+      {/* Loading More Indicator */}
+      {isLoadingMore && (
+        <div className="text-center py-4">
+          <div className="text-2xl">🔄</div>
+          <p className="text-gray-500 text-sm mt-2">Loading more ideas...</p>
+        </div>
+      )}
+
+      {/* Show More Button (fallback for non-scrolling users) */}
+      {!isLoadingMore && displayedIdeasCount < sortedIdeas.length && (
+        <div className="text-center py-6">
+          <button
+            onClick={() => setDisplayedIdeasCount(prev => Math.min(prev + 20, sortedIdeas.length))}
+            className="bg-slate-600 hover:bg-slate-500 text-white px-6 py-3 rounded transition-colors"
+          >
+            Load More Ideas ({sortedIdeas.length - displayedIdeasCount} remaining)
+          </button>
+        </div>
+      )}
+
+      {/* Ideas Count Info */}
+      {sortedIdeas.length > 0 && (
+        <div className="text-center py-4 text-sm text-gray-500">
+          Showing {Math.min(displayedIdeasCount, sortedIdeas.length)} of {sortedIdeas.length} ideas
+          {(searchTerm || selectedCategory) && ` (filtered from ${ideas.length} total)`}
+        </div>
+      )}
+
+      {/* Empty State */}
+      {sortedIdeas.length === 0 && (
+        <div className="text-center py-12">
+          {searchTerm ? (
+            <div>
+              <div className="text-4xl mb-4">🔍</div>
+              <h3 className="text-xl font-semibold text-gray-300 mb-2">No ideas found</h3>
+              <p className="text-gray-500 mb-4">Try adjusting your search terms or browse all ideas</p>
+              <button 
+                onClick={() => setSearchTerm('')}
+                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
+              >
+                Clear Search
+              </button>
+            </div>
+          ) : (
+            <div>
+              <div className="text-4xl mb-4">💡</div>
+              <h3 className="text-xl font-semibold text-gray-300 mb-2">No ideas yet</h3>
+              <p className="text-gray-500 mb-4">Be the first to share your brilliant idea!</p>
+              {showTrendingRepos ? null : (
+                <button 
+                  onClick={() => setShowTrendingRepos(true)}
+                  className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded"
+                >
+                  Get Inspired by Trending Repos
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Notification Toast */}
+      {notification && (
+        <div className={`fixed top-4 right-4 z-50 max-w-sm p-4 rounded-lg shadow-lg transform transition-all duration-300 ${
+          notification.type === 'success' 
+            ? 'bg-green-600 text-white'
+            : notification.type === 'error'
+              ? 'bg-red-600 text-white' 
+              : 'bg-blue-600 text-white'
+        }`}>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium">{notification.message}</span>
+            <button 
+              onClick={() => setNotification(null)}
+              className="text-white hover:text-gray-200 ml-2"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Account Settings Modal */}
       {showAccountSettings && (
