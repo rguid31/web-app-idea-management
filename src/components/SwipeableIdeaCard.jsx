@@ -2,6 +2,7 @@ import { renderMarkdown, hasMarkdown } from '../utils/markdown';
 import useSwipe from '../hooks/useSwipe';
 import Icon from './Icon';
 import { LoadingSpinner } from './Progress';
+import CommentsSection from "./CommentsSection";
 
 const SwipeableIdeaCard = ({ 
   idea, 
@@ -164,6 +165,9 @@ const SwipeableIdeaCard = ({
             )}
           </div>
         )}
+
+        {/* Comments Section */}
+        <CommentsSection ideaId={idea.id} user={user} />
       </div>
     </div>
   );

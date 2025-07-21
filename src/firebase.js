@@ -1,18 +1,19 @@
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 
-// Securely import the environment variables
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_API_KEY,
-  authDomain: import.meta.env.VITE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_APP_ID
+  apiKey: "AIzaSyA8ocgbm93KhaPgFq0QnYaiyuuCb3BPhFM",
+  authDomain: "idea-board-app.firebaseapp.com",
+  projectId: "idea-board-app",
+  storageBucket: "idea-board-app.firebasestorage.app",
+  messagingSenderId: "175710312811",
+  appId: "1:175710312811:web:327ece79d8d855903e542e"
+  // measurementId: "YOUR_MEASUREMENT_ID" // optional
 };
 
 const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
 
-export const auth = getAuth(app);
-export const db = getFirestore(app);
+export { db, auth };
